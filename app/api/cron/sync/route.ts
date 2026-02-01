@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runDueJobs } from "@/lib/scheduler";
 
+export async function GET(req: NextRequest) {
+  return POST(req);
+}
+
 export async function POST(req: NextRequest) {
   // Check CRON_SECRET
   const cronSecret = req.headers.get("x-cron-secret");
