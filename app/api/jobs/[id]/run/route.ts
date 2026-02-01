@@ -4,8 +4,9 @@ import { syncPreRegisteredList } from "@/lib/sync";
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params;
   const jobId = params.id;
   
   const job = await prisma.syncJob.findUnique({

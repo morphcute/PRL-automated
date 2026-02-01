@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { JobForm } from "@/components/JobForm";
 import { SyncJobInput } from "@/lib/validations";
 
-export default function EditJobPage({ params }: { params: { id: string } }) {
+export default function EditJobPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
+  const { id } = use(params);
   const [initialData, setInitialData] = useState<SyncJobInput | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchJob = async () => {
       try {
-        const res = await fetch(`/api/jobs/${params.id}`);
+        const res = await fetch(`/api/jobs/${id}`);
         if (!res.ok) throw new Error("Failed to fetch job");
         const data = await res.json();
         
@@ -32,11 +33,11 @@ export default function EditJobPage({ params }: { params: { id: string } }) {
     };
 
     fetchJob();
-  }, [params.id, router]);
+  }, [id, router]);
 
   const handleUpdate = async (data: SyncJobInput) => {
     try {
-      const res = await fetch(`/api/jobs/${params.id}`, {
+      const res = await fetch(`/api/jobs/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),

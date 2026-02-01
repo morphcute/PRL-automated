@@ -4,8 +4,9 @@ import { SyncJobSchema } from "@/lib/validations";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params;
   try {
     const job = await prisma.syncJob.findUnique({
       where: { id: params.id },
@@ -27,8 +28,9 @@ export async function GET(
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params;
   try {
     const body = await req.json();
     const validatedData = SyncJobSchema.partial().parse(body);
@@ -53,8 +55,9 @@ export async function PATCH(
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  props: { params: Promise<{ id: string }> }
 ) {
+  const params = await props.params;
   try {
     await prisma.syncJob.delete({
       where: { id: params.id },
