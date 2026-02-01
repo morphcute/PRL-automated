@@ -38,11 +38,14 @@ export default function Dashboard() {
     if(!confirm("Are you sure you want to run this job now?")) return;
     try {
       const res = await fetch(`/api/jobs/${id}/run`, { method: "POST" });
-      if (!res.ok) throw new Error("Failed to run job");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to run job");
+      }
       alert("Success! The job has started.");
       fetchJobs();
-    } catch (error) {
-      alert("Error triggering job");
+    } catch (error: any) {
+      alert(error.message || "Error triggering job");
     }
   };
 
