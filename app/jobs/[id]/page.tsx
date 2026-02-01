@@ -4,12 +4,15 @@ import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { JobForm } from "@/components/JobForm";
 import { SyncJobInput } from "@/lib/validations";
+import Modal from "@/components/Modal";
 
 export default function EditJobPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter();
   const { id } = use(params);
   const [initialData, setInitialData] = useState<SyncJobInput | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorModalOpen, setErrorModalOpen] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   useEffect(() => {
     const fetchJob = async () => {
@@ -23,10 +26,12 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
         if (data.endAt) data.endAt = new Date(data.endAt).toISOString().slice(0, 16);
         
         setInitialData(data);
-      } catch (error) {
+      } catch (error: any) {
         console.error(error);
-        alert("Failed to load job");
-        router.push("/");
+        setErrorMessage(error.message || "Failed to load job");
+        setErrorModalOpen(true);
+        // Delay redirect to let user see error
+        setTimeout(() => router.push("/"), 2000);
       } finally {
         setLoading(false);
       }
@@ -52,17 +57,40 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
       router.refresh();
     } catch (error: any) {
       console.error(error);
-      alert(error.message || "Failed to update job");
+      setErrorMessage(error.message || "Failed to update job");
+      setErrorModalOpen(true);
     }
   };
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return (
+    <div className="flex flex-col justify-center items-center min-h-[60vh] gap-4">
+      <div className="w-16 h-16 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+      <div className="text-xl font-medium text-white/50 animate-pulse">Loading Job Details...</div>
+    </div>
+  );
+  
   if (!initialData) return null;
 
   return (
-    <div className="max-w-2xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Edit Sync Job</h1>
+    <div className="w-full">
       <JobForm initialData={initialData} onSubmit={handleUpdate} />
+
+      <Modal
+        isOpen={errorModalOpen}
+        onClose={() => setErrorModalOpen(false)}
+        title="Error"
+        type="danger"
+        footer={
+          <button 
+            onClick={() => setErrorModalOpen(false)}
+            className="w-full px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl font-bold transition-all"
+          >
+            Close
+          </button>
+        }
+      >
+        <p className="text-lg">{errorMessage}</p>
+      </Modal>
     </div>
   );
 }
