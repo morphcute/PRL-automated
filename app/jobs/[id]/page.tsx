@@ -43,13 +43,16 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
         body: JSON.stringify(data),
       });
 
-      if (!res.ok) throw new Error("Failed to update job");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to update job");
+      }
       
       router.push("/");
       router.refresh();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Failed to update job");
+      alert(error.message || "Failed to update job");
     }
   };
 

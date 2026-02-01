@@ -15,13 +15,16 @@ export default function NewJobPage() {
         body: JSON.stringify(data),
       });
 
-      if (!res.ok) throw new Error("Failed to create job");
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to create job");
+      }
       
       router.push("/");
       router.refresh();
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert("Failed to create job");
+      alert(error.message || "Failed to create job");
     }
   };
 
