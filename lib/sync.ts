@@ -44,7 +44,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
     // Group 5: Y(24), Z(25), AA(26), AB(27)
     
     const transformedRows: any[][] = [
-      ["Players Name", "Players IGN", "# Server", "# UID"] // Headers
+      ["No.", "Players Name", "Players IGN", "# Server", "# UID"] // Headers
     ];
 
     const groups = [
@@ -65,24 +65,52 @@ export async function syncPreRegisteredList(job: SyncJob) {
       return strVal;
     };
 
+    let teamCount = 1;
+    // We'll collect ranges to merge: { startRow, endRow } (0-based inclusive/exclusive logic of Sheets API)
+    const mergeRanges: { startRow: number, endRow: number }[] = [];
+
     for (const row of sourceRows) {
-      for (const [nameIdx, ignIdx, serverIdx, uidIdx] of groups) {
-        // Ensure the row has enough columns (pad with undefined if needed)
+      // Check if row has any data in the relevant columns
+      let hasAnyData = false;
+      for (const grp of groups) {
+         if (row[grp[0]] || row[grp[1]] || row[grp[2]] || row[grp[3]]) {
+             hasAnyData = true;
+             break;
+         }
+      }
+      if (!hasAnyData) continue;
+
+      const startRowIndex = transformedRows.length; // Current row index in target (0-based)
+
+      for (let i = 0; i < 5; i++) {
+        const [nameIdx, ignIdx, serverIdx, uidIdx] = groups[i];
+        
         const name = row[nameIdx];
         const ign = row[ignIdx];
         const server = row[serverIdx];
         const uid = row[uidIdx];
 
-        // Skip if all fields are empty
-        if (!name && !ign && !server && !uid) continue;
+        // First row of the group gets the number
+        const noCol = (i === 0) ? teamCount : "";
 
         transformedRows.push([
+          noCol,
           name ? String(name).trim() : "",
           ign ? String(ign).trim() : "",
           cleanValue(server),
           cleanValue(uid)
         ]);
       }
+      
+      // Record merge range for the "No." column (Col 0)
+      // startRowIndex is the index of the first row we just added
+      // We added 5 rows.
+      mergeRanges.push({
+          startRow: startRowIndex,
+          endRow: startRowIndex + 5
+      });
+
+      teamCount++;
     }
 
     const rows = transformedRows;
@@ -90,6 +118,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
     // 2. Write to Target (Pre Registered List)
     const targetId = job.targetSpreadsheetId;
     const TAB_NAME = job.sheetName || "Pre Registered List";
+    let targetSheetId: number | null = null;
     
     // Check if target tab exists in target spreadsheet
     const targetSpreadsheet = await sheets.spreadsheets.get({
@@ -101,7 +130,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
     );
 
     if (targetSheet) {
-      // 4a. If exists -> overwrite/fill it
+      targetSheetId = targetSheet.properties?.sheetId || 0;
       
       // Clear existing content
       await sheets.spreadsheets.values.clear({
@@ -118,14 +147,11 @@ export async function syncPreRegisteredList(job: SyncJob) {
           requestBody: { values: rows },
         });
       }
-      
       console.log(`Updated existing tab '${TAB_NAME}' in target sheet`);
 
     } else {
-      // 4b. If not exists -> create it -> write
-      
       // Create the sheet (tab)
-      await sheets.spreadsheets.batchUpdate({
+      const createResp = await sheets.spreadsheets.batchUpdate({
         spreadsheetId: targetId,
         requestBody: {
           requests: [
@@ -139,6 +165,8 @@ export async function syncPreRegisteredList(job: SyncJob) {
           ],
         },
       });
+      
+      targetSheetId = createResp.data.replies?.[0].addSheet?.properties?.sheetId || 0;
 
       // Write new data
       if (rows.length > 0) {
@@ -149,8 +177,136 @@ export async function syncPreRegisteredList(job: SyncJob) {
           requestBody: { values: rows },
         });
       }
-
       console.log(`Created and populated new tab '${TAB_NAME}' in target sheet`);
+    }
+
+    // 3. Apply Formatting (Borders, Colors, Merging)
+    if (targetSheetId !== null && rows.length > 0) {
+        const requests: any[] = [];
+
+        // 1. Format Header (Row 0)
+        requests.push({
+            repeatCell: {
+                range: {
+                    sheetId: targetSheetId,
+                    startRowIndex: 0,
+                    endRowIndex: 1,
+                    startColumnIndex: 0,
+                    endColumnIndex: 5
+                },
+                cell: {
+                    userEnteredFormat: {
+                        backgroundColor: { red: 0.1, green: 0.3, blue: 0.2 }, // Dark Green
+                        textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 10 },
+                        horizontalAlignment: "CENTER",
+                        verticalAlignment: "MIDDLE"
+                    }
+                },
+                fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"
+            }
+        });
+
+        // 2. Format Data Cells (Borders & Alignment)
+        requests.push({
+            repeatCell: {
+                range: {
+                    sheetId: targetSheetId,
+                    startRowIndex: 0, // Include header in borders
+                    endRowIndex: rows.length,
+                    startColumnIndex: 0,
+                    endColumnIndex: 5
+                },
+                cell: {
+                    userEnteredFormat: {
+                        borders: {
+                            top: { style: "SOLID" },
+                            bottom: { style: "SOLID" },
+                            left: { style: "SOLID" },
+                            right: { style: "SOLID" }
+                        },
+                        horizontalAlignment: "CENTER",
+                        verticalAlignment: "MIDDLE",
+                        wrapStrategy: "WRAP"
+                    }
+                },
+                fields: "userEnteredFormat(borders,horizontalAlignment,verticalAlignment,wrapStrategy)"
+            }
+        });
+
+        // 3. Merge "No." Columns
+        for (const range of mergeRanges) {
+            requests.push({
+                mergeCells: {
+                    range: {
+                        sheetId: targetSheetId,
+                        startRowIndex: range.startRow,
+                        endRowIndex: range.endRow,
+                        startColumnIndex: 0,
+                        endColumnIndex: 1
+                    },
+                    mergeType: "MERGE_ALL"
+                }
+            });
+            
+            // Add thick bottom border for each team block
+             requests.push({
+                updateBorders: {
+                    range: {
+                        sheetId: targetSheetId,
+                        startRowIndex: range.endRow - 1, // Last row of the block
+                        endRowIndex: range.endRow,
+                        startColumnIndex: 0,
+                        endColumnIndex: 5
+                    },
+                    bottom: { style: "SOLID_MEDIUM" } // Thicker border to separate teams
+                }
+            });
+        }
+        
+        // Add thick border around the header
+        requests.push({
+             updateBorders: {
+                range: {
+                    sheetId: targetSheetId,
+                    startRowIndex: 0,
+                    endRowIndex: 1,
+                    startColumnIndex: 0,
+                    endColumnIndex: 5
+                },
+                bottom: { style: "SOLID_MEDIUM" }
+            }
+        });
+        
+        // Resize columns for better visibility
+        requests.push({
+            updateDimensionProperties: {
+                range: {
+                    sheetId: targetSheetId,
+                    dimension: "COLUMNS",
+                    startIndex: 0,
+                    endIndex: 1
+                },
+                properties: { pixelSize: 40 }, // "No." column narrow
+                fields: "pixelSize"
+            }
+        });
+        requests.push({
+            updateDimensionProperties: {
+                range: {
+                    sheetId: targetSheetId,
+                    dimension: "COLUMNS",
+                    startIndex: 1,
+                    endIndex: 3
+                },
+                properties: { pixelSize: 180 }, // Name/IGN wider
+                fields: "pixelSize"
+            }
+        });
+
+        await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: targetId,
+            requestBody: { requests }
+        });
     }
 
     return {
