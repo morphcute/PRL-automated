@@ -27,7 +27,12 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
 
   const handleSubmit = async (data: SyncJobInput) => {
     if (onSubmit) {
-      await onSubmit(data);
+      // Convert local time strings to UTC ISO strings before submitting
+      const adjustedData = { ...data };
+      if (data.startAt) {
+        adjustedData.startAt = new Date(data.startAt).toISOString();
+      }
+      await onSubmit(adjustedData);
     }
   };
 
