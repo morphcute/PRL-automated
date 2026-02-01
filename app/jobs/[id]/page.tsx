@@ -21,9 +21,19 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
         if (!res.ok) throw new Error("Failed to fetch job");
         const data = await res.json();
         
+        // Helper to convert UTC string to Local ISO string (YYYY-MM-DDThh:mm) for input
+        const toLocalISOString = (dateStr: string) => {
+          const date = new Date(dateStr);
+          // Get offset in milliseconds (getTimezoneOffset returns minutes, positive if behind UTC)
+          const offset = date.getTimezoneOffset() * 60000;
+          // Subtract offset to get local time represented as UTC timestamp
+          const localDate = new Date(date.getTime() - offset);
+          return localDate.toISOString().slice(0, 16);
+        };
+
         // Format dates for the form
-        if (data.startAt) data.startAt = new Date(data.startAt).toISOString().slice(0, 16);
-        if (data.endAt) data.endAt = new Date(data.endAt).toISOString().slice(0, 16);
+        if (data.startAt) data.startAt = toLocalISOString(data.startAt);
+        if (data.endAt) data.endAt = toLocalISOString(data.endAt);
         
         setInitialData(data);
       } catch (error: any) {
