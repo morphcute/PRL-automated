@@ -49,20 +49,20 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
       <div className="space-y-8">
         
         {/* Step 1: Job Name */}
-        <div className="glass-card glass-card-hover p-8 rounded-3xl border border-white/10 group hover:border-blue-500/30 transition-colors">
-          <div className="flex items-start gap-6">
-            <div className="flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-3xl font-black text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] border border-white/20">
+        <div className="glass-card glass-card-hover p-6 md:p-8 rounded-3xl border border-white/10 group hover:border-blue-500/30 transition-colors">
+          <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6">
+            <div className="flex-shrink-0 w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-2xl md:text-3xl font-black text-white shadow-[0_0_20px_rgba(59,130,246,0.5)] border border-white/20">
               1
             </div>
-            <div className="flex-1 space-y-6">
+            <div className="flex-1 space-y-4 md:space-y-6 w-full">
               <div>
-                <h3 className="text-2xl font-bold text-white mb-2">Job Identity</h3>
-                <label className="block text-lg text-white/60">Give this automation task a unique name.</label>
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Job Identity</h3>
+                <label className="block text-base md:text-lg text-white/60">Give this automation task a unique name.</label>
               </div>
               <div className="relative">
                 <input 
                   {...form.register("name")} 
-                  className="w-full text-xl p-6 pl-6 rounded-2xl glass-input focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400/50 transition-all placeholder:text-white/20 bg-black/20" 
+                  className="w-full text-lg md:text-xl p-4 md:p-6 pl-6 rounded-2xl glass-input focus:ring-2 focus:ring-blue-500/50 focus:border-blue-400/50 transition-all placeholder:text-white/20 bg-black/20" 
                   placeholder="e.g. Weekly Tournament List" 
                 />
                 <div className="absolute inset-0 rounded-2xl pointer-events-none border border-white/5"></div>
@@ -73,20 +73,20 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
         </div>
 
         {/* Step 2: Source Link */}
-        <div className="glass-card glass-card-hover p-8 rounded-3xl border border-white/10 group hover:border-purple-500/30 transition-colors">
-          <div className="flex items-start gap-6">
-            <div className="flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-3xl font-black text-white shadow-[0_0_20px_rgba(168,85,247,0.5)] border border-white/20">
+        <div className="glass-card glass-card-hover p-6 md:p-8 rounded-3xl border border-white/10 group hover:border-purple-500/30 transition-colors">
+          <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6">
+            <div className="flex-shrink-0 w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-purple-700 flex items-center justify-center text-2xl md:text-3xl font-black text-white shadow-[0_0_20px_rgba(168,85,247,0.5)] border border-white/20">
               2
             </div>
-            <div className="flex-1 space-y-6">
+            <div className="flex-1 space-y-4 md:space-y-6 w-full">
               <div>
-                <h3 className="text-2xl font-bold text-white mb-2">Data Source</h3>
-                <label className="block text-lg text-white/60">Paste the full URL of the source Google Sheet (Responses).</label>
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Data Source</h3>
+                <label className="block text-base md:text-lg text-white/60">Paste the full URL of the source Google Sheet (Responses).</label>
               </div>
               <div className="relative group/input">
                 <input 
                   {...form.register("spreadsheetId")} 
-                  className="w-full text-lg p-6 rounded-2xl glass-input font-mono text-purple-200 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400/50 transition-all placeholder:text-white/20 bg-black/20" 
+                  className="w-full text-base md:text-lg p-4 md:p-6 rounded-2xl glass-input font-mono text-purple-200 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-400/50 transition-all placeholder:text-white/20 bg-black/20" 
                   placeholder="https://docs.google.com/spreadsheets/d/..." 
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 group-hover/input:text-purple-400 transition-colors">
@@ -99,19 +99,19 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
         </div>
 
         {/* Step 3: Target File */}
-        <div className="glass-card glass-card-hover p-8 rounded-3xl border border-white/10 group hover:border-pink-500/30 transition-colors">
-          <div className="flex items-start gap-6">
-            <div className="flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-pink-500 to-pink-700 flex items-center justify-center text-3xl font-black text-white shadow-[0_0_20px_rgba(236,72,153,0.5)] border border-white/20">
+        <div className="glass-card glass-card-hover p-6 md:p-8 rounded-3xl border border-white/10 group hover:border-pink-500/30 transition-colors">
+          <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6">
+            <div className="flex-shrink-0 w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-pink-500 to-pink-700 flex items-center justify-center text-2xl md:text-3xl font-black text-white shadow-[0_0_20px_rgba(236,72,153,0.5)] border border-white/20">
               3
             </div>
-            <div className="flex-1 space-y-6">
+            <div className="flex-1 space-y-4 md:space-y-6 w-full">
               <div>
-                <h3 className="text-2xl font-bold text-white mb-2">Target Destination</h3>
-                <label className="block text-lg text-white/60">Name for the "Pre Registered List" file.</label>
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Target Destination</h3>
+                <label className="block text-base md:text-lg text-white/60">Name for the "Pre Registered List" file.</label>
               </div>
               <input 
                 {...form.register("targetSpreadsheetName")} 
-                className="w-full text-xl p-6 rounded-2xl glass-input focus:ring-2 focus:ring-pink-500/50 focus:border-pink-400/50 transition-all placeholder:text-white/20 bg-black/20" 
+                className="w-full text-lg md:text-xl p-4 md:p-6 rounded-2xl glass-input focus:ring-2 focus:ring-pink-500/50 focus:border-pink-400/50 transition-all placeholder:text-white/20 bg-black/20" 
                 placeholder="e.g. PRL - Season 5" 
               />
               
@@ -130,15 +130,15 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
         </div>
 
         {/* Step 4: Schedule */}
-        <div className="glass-card glass-card-hover p-8 rounded-3xl border border-white/10 group hover:border-emerald-500/30 transition-colors">
-          <div className="flex items-start gap-6">
-            <div className="flex-shrink-0 w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-3xl font-black text-white shadow-[0_0_20px_rgba(16,185,129,0.5)] border border-white/20">
+        <div className="glass-card glass-card-hover p-6 md:p-8 rounded-3xl border border-white/10 group hover:border-emerald-500/30 transition-colors">
+          <div className="flex flex-col md:flex-row items-start gap-4 md:gap-6">
+            <div className="flex-shrink-0 w-12 h-12 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center text-2xl md:text-3xl font-black text-white shadow-[0_0_20px_rgba(16,185,129,0.5)] border border-white/20">
               4
             </div>
-            <div className="flex-1 space-y-8">
+            <div className="flex-1 space-y-6 md:space-y-8 w-full">
               <div>
-                <h3 className="text-2xl font-bold text-white mb-2">Execution Protocol</h3>
-                <label className="block text-lg text-white/60">Choose how this job should run.</label>
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-2">Execution Protocol</h3>
+                <label className="block text-base md:text-lg text-white/60">Choose how this job should run.</label>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

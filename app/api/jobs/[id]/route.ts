@@ -35,9 +35,13 @@ export async function PATCH(
     const body = await req.json();
     const validatedData = SyncJobSchema.partial().parse(body);
 
+    const updateData: any = { ...validatedData };
+    if (validatedData.startAt) updateData.startAt = new Date(validatedData.startAt);
+    if (validatedData.endAt) updateData.endAt = new Date(validatedData.endAt);
+
     const job = await prisma.syncJob.update({
       where: { id: params.id },
-      data: validatedData,
+      data: updateData,
     });
 
     return NextResponse.json(job);

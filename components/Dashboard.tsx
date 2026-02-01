@@ -105,19 +105,19 @@ export default function Dashboard() {
     <div className="space-y-10 max-w-6xl mx-auto px-4 py-8">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row justify-between items-end gap-6 pb-6 border-b border-white/10">
-        <div className="animate-float">
-           <h1 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)]">
+        <div className="animate-float w-full md:w-auto">
+           <h1 className="text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 drop-shadow-[0_0_15px_rgba(59,130,246,0.5)] leading-tight">
              PRL AUTOMATED
            </h1>
-           <p className="text-blue-200/60 mt-2 text-xl font-light tracking-wide">
+           <p className="text-blue-200/60 mt-2 text-lg md:text-xl font-light tracking-wide">
              Pre Registered List Management System
            </p>
         </div>
         
-        <div className="flex gap-4 items-center">
+        <div className="flex gap-4 items-center w-full md:w-auto">
           <Link
             href="/jobs/new"
-            className="group relative px-6 py-3 bg-blue-600 rounded-xl font-bold text-white shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)] transition-all duration-300 hover:-translate-y-1 overflow-hidden"
+            className="flex-1 md:flex-none justify-center group relative px-6 py-3 bg-blue-600 rounded-xl font-bold text-white shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:shadow-[0_0_30px_rgba(37,99,235,0.6)] transition-all duration-300 hover:-translate-y-1 overflow-hidden"
           >
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:animate-[shimmer_1.5s_infinite]"></div>
             <span className="flex items-center gap-2">

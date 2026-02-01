@@ -62,7 +62,7 @@ export default function Modal({ isOpen, onClose, title, children, footer, type =
           </div>
 
           {footer && (
-            <div className="mt-8 flex justify-end gap-3">
+            <div className="mt-8 flex flex-col sm:flex-row justify-end gap-3">
               {footer}
             </div>
           )}

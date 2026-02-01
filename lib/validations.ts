@@ -10,8 +10,8 @@ export const SyncJobSchema = z.object({
   
   // Scheduler fields
   intervalMinutes: z.number().int().positive().optional().nullable(),
-  startAt: z.string().datetime().optional().nullable(), // Receive as string from JSON/Form
-  endAt: z.string().datetime().optional().nullable(),
+  startAt: z.string().optional().nullable(), // Receive as string from JSON/Form (datetime-local format)
+  endAt: z.string().optional().nullable(),
   
   // New fields
   runMode: RunModeSchema.default("both"),

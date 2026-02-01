@@ -78,14 +78,18 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Create Job
+    const jobData = {
+      ...validatedData,
+      spreadsheetId: sourceId, // Normalized ID
+      targetSpreadsheetId: targetId,
+      targetSpreadsheetName: targetName,
+      userId: session.user.id,
+      startAt: validatedData.startAt ? new Date(validatedData.startAt) : null,
+      endAt: validatedData.endAt ? new Date(validatedData.endAt) : null,
+    };
+
     const job = await prisma.syncJob.create({
-      data: {
-        ...validatedData,
-        spreadsheetId: sourceId, // Normalized ID
-        targetSpreadsheetId: targetId,
-        targetSpreadsheetName: targetName,
-        userId: session.user.id,
-      },
+      data: jobData,
     });
 
     return NextResponse.json(job, { status: 201 });
