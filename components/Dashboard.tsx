@@ -53,6 +53,36 @@ export default function Dashboard() {
     fetchJobs();
   }, []);
 
+  // Background Scheduler Simulation (Auto Pilot Heartbeat)
+  // This ensures scheduled jobs run while the dashboard is open, even without external cron.
+  useEffect(() => {
+    const checkSchedule = async () => {
+      try {
+        const res = await fetch("/api/jobs/check", { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          // If any job was actually processed (attempted run), refresh the UI
+          if (data.results && data.results.length > 0) {
+            fetchJobs();
+          }
+        }
+      } catch (error) {
+        console.error("Scheduler heartbeat failed", error);
+      }
+    };
+
+    // Check every 60 seconds
+    const intervalId = setInterval(checkSchedule, 60000);
+    
+    // Also run once on mount (after a short delay to let initial load finish)
+    const timeoutId = setTimeout(checkSchedule, 5000);
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(timeoutId);
+    };
+  }, []);
+
   const handleRunClick = (job: JobWithRuns) => {
     setSelectedJob(job);
     setRunModalOpen(true);
