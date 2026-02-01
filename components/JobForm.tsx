@@ -32,6 +32,14 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
       if (data.startAt) {
         adjustedData.startAt = new Date(data.startAt).toISOString();
       }
+
+      // Automatically enable cron if runMode is set to auto-pilot (both) or scheduled
+      if (data.runMode === "both" || data.runMode === "scheduled") {
+        adjustedData.cronEnabled = true;
+      } else {
+        adjustedData.cronEnabled = false;
+      }
+
       await onSubmit(adjustedData);
     }
   };
