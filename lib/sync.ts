@@ -30,10 +30,62 @@ export async function syncPreRegisteredList(job: SyncJob) {
 
     const sourceData = await sheets.spreadsheets.values.get({
       spreadsheetId: job.spreadsheetId,
-      range: `'${sourceSheetName}'!A:Z`,
+      range: `'${sourceSheetName}'!A2:AB`, // Read from row 2 to column AB
     });
 
-    const rows = sourceData.data.values || [];
+    const sourceRows = sourceData.data.values || [];
+    
+    // Transform Data
+    // We need to extract 5 groups of columns for each row
+    // Group 1: D(3), E(4), F(5), G(6)
+    // Group 2: J(9), K(10), L(11), M(12)
+    // Group 3: O(14), P(15), Q(16), R(17)
+    // Group 4: T(19), U(20), V(21), W(22)
+    // Group 5: Y(24), Z(25), AA(26), AB(27)
+    
+    const transformedRows: any[][] = [
+      ["Players Name", "Players IGN", "# Server", "# UID"] // Headers
+    ];
+
+    const groups = [
+      [3, 4, 5, 6],    // Group 1
+      [9, 10, 11, 12], // Group 2
+      [14, 15, 16, 17],// Group 3
+      [19, 20, 21, 22],// Group 4
+      [24, 25, 26, 27] // Group 5
+    ];
+
+    const cleanValue = (val: any) => {
+      if (!val) return "";
+      let strVal = String(val).trim();
+      // Remove leading dash (equivalent to REGEXREPLACE(..., "^-", ""))
+      if (strVal.startsWith("-")) {
+        strVal = strVal.substring(1);
+      }
+      return strVal;
+    };
+
+    for (const row of sourceRows) {
+      for (const [nameIdx, ignIdx, serverIdx, uidIdx] of groups) {
+        // Ensure the row has enough columns (pad with undefined if needed)
+        const name = row[nameIdx];
+        const ign = row[ignIdx];
+        const server = row[serverIdx];
+        const uid = row[uidIdx];
+
+        // Skip if all fields are empty
+        if (!name && !ign && !server && !uid) continue;
+
+        transformedRows.push([
+          name ? String(name).trim() : "",
+          ign ? String(ign).trim() : "",
+          cleanValue(server),
+          cleanValue(uid)
+        ]);
+      }
+    }
+
+    const rows = transformedRows;
     
     // 2. Write to Target (Pre Registered List)
     const targetId = job.targetSpreadsheetId;
