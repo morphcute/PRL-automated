@@ -93,12 +93,25 @@ export async function syncPreRegisteredList(job: SyncJob) {
         // First row of the group gets the number
         const noCol = (i === 0) ? teamCount : "";
 
+        let sVal = cleanValue(server);
+        let uVal = cleanValue(uid);
+
+        // Auto-correct swapped Server and UID
+        // MLBB Server IDs are typically 4-5 digits (short)
+        // MLBB UIDs are typically 8-10 digits (long)
+        // Condition: If Server looks like a UID (>=7 chars) AND UID looks like a Server (<=6 chars)
+        if (sVal.length >= 7 && uVal.length <= 6 && uVal.length > 0) {
+           const temp = sVal;
+           sVal = uVal;
+           uVal = temp;
+        }
+
         transformedRows.push([
           noCol,
           name ? String(name).trim() : "",
           ign ? String(ign).trim() : "",
-          cleanValue(server),
-          cleanValue(uid)
+          sVal,
+          uVal
         ]);
       }
       
