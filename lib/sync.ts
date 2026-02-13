@@ -30,29 +30,33 @@ export async function syncPreRegisteredList(job: SyncJob) {
 
     const sourceData = await sheets.spreadsheets.values.get({
       spreadsheetId: job.spreadsheetId,
-      range: `'${sourceSheetName}'!A2:AB`, // Read from row 2 to column AB
+      range: `'${sourceSheetName}'!A2:AC`, // Read from row 2 to column AC
     });
 
     const sourceRows = sourceData.data.values || [];
     
+    // Determine Team Size based on Job Type
+    // 3v3 = 3 players, 5v5/onsite = 5 players
+    const teamSize = job.type === "3v3" ? 3 : 5;
+    
     // Transform Data
-    // We need to extract 5 groups of columns for each row
+    // We need to extract groups of columns for each row
     // Group 1: D(3), E(4), F(5), G(6)
-    // Group 2: J(9), K(10), L(11), M(12)
-    // Group 3: O(14), P(15), Q(16), R(17)
-    // Group 4: T(19), U(20), V(21), W(22)
-    // Group 5: Y(24), Z(25), AA(26), AB(27)
+    // Group 2: K(10), L(11), M(12), N(13)
+    // Group 3: P(15), Q(16), R(17), S(18)
+    // Group 4: U(20), V(21), W(22), X(23)
+    // Group 5: Z(25), AA(26), AB(27), AC(28)
     
     const transformedRows: any[][] = [
       ["No.", "Players Name", "Players IGN", "# Server", "# UID"] // Headers
     ];
 
     const groups = [
-      [3, 4, 5, 6],    // Group 1
-      [9, 10, 11, 12], // Group 2
-      [14, 15, 16, 17],// Group 3
-      [19, 20, 21, 22],// Group 4
-      [24, 25, 26, 27] // Group 5
+      [3, 4, 5, 6],      // Group 1
+      [10, 11, 12, 13],  // Group 2
+      [15, 16, 17, 18],  // Group 3
+      [20, 21, 22, 23],  // Group 4
+      [25, 26, 27, 28]   // Group 5
     ];
 
     const cleanValue = (val: any) => {
@@ -82,7 +86,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
 
       const startRowIndex = transformedRows.length; // Current row index in target (0-based)
 
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < teamSize; i++) {
         const [nameIdx, ignIdx, serverIdx, uidIdx] = groups[i];
         
         const name = row[nameIdx];
@@ -117,10 +121,10 @@ export async function syncPreRegisteredList(job: SyncJob) {
       
       // Record merge range for the "No." column (Col 0)
       // startRowIndex is the index of the first row we just added
-      // We added 5 rows.
+      // We added teamSize rows.
       mergeRanges.push({
           startRow: startRowIndex,
-          endRow: startRowIndex + 5
+          endRow: startRowIndex + teamSize
       });
 
       teamCount++;

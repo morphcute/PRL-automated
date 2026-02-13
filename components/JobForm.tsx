@@ -14,6 +14,7 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
     resolver: zodResolver(SyncJobSchema),
     defaultValues: initialData || {
       name: "",
+      type: "5v5",
       spreadsheetId: "",
       sheetName: "Pre Registered List",
       runMode: "manual",
@@ -24,6 +25,7 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
   });
 
   const runMode = form.watch("runMode");
+  const jobType = form.watch("type");
 
   const handleSubmit = async (data: SyncJobInput) => {
     if (onSubmit) {
@@ -81,6 +83,28 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
                 <div className="absolute inset-0 rounded-2xl pointer-events-none border border-white/5"></div>
               </div>
               {form.formState.errors.name && <span className="inline-block px-4 py-2 rounded-lg bg-red-500/10 text-red-300 border border-red-500/20 font-medium animate-pulse">{form.formState.errors.name.message}</span>}
+              
+              <div className="pt-4">
+                <label className="block text-base md:text-lg text-white/60 mb-3">Job Type</label>
+                <div className="grid grid-cols-3 gap-4">
+                  {(["5v5", "3v3", "onsite"] as const).map((type) => (
+                    <label key={type} className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 text-center ${
+                      jobType === type 
+                        ? 'border-blue-400 bg-blue-500/10 text-white font-bold' 
+                        : 'border-white/10 text-white/40 hover:border-white/30 hover:bg-white/5'
+                    }`}>
+                      <input 
+                        type="radio" 
+                        value={type} 
+                        {...form.register("type")} 
+                        className="sr-only"
+                      />
+                      <span className="uppercase">{type}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
             </div>
           </div>
         </div>

@@ -79,6 +79,7 @@ model SyncJob {
   
   // Job configuration
   name            String
+  type            String    @default("5v5") // "5v5", "3v3", "onsite"
   spreadsheetId   String // Source Sheet ID
   
   // Target Configuration
