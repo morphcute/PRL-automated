@@ -50,7 +50,12 @@ export async function POST(
       // Update Job lastRunAt
       await prisma.syncJob.update({
         where: { id: job.id },
-        data: { lastRunAt: now },
+        data: { 
+          lastRunAt: now,
+          // If the user runs it manually, also disable the automatic schedule 
+          // if it's a one-time job (no interval)
+          cronEnabled: !!job.intervalMinutes
+        },
       });
 
     } catch (error: any) {

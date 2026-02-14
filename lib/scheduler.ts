@@ -74,7 +74,12 @@ export async function runDueJobs() {
       // Update Job lastRunAt
       await prisma.syncJob.update({
         where: { id: job.id },
-        data: { lastRunAt: now },
+        data: { 
+          lastRunAt: now,
+          // If it's a scheduled or auto-pilot job without an interval, 
+          // disable cronEnabled after it runs once successfully.
+          cronEnabled: !!job.intervalMinutes
+        },
       });
 
       results.push({ jobId: job.id, status: "success", rows: result.rowsWritten });
