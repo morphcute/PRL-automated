@@ -1,4 +1,5 @@
 import { signIn } from "@/lib/auth"
+import Link from "next/link"
 
 export default function LoginPage() {
   return (
@@ -33,6 +34,18 @@ export default function LoginPage() {
             <span>Continue with Google</span>
           </button>
         </form>
+
+        <div className="text-center text-xs text-muted-foreground mt-6">
+          By signing in, you agree to our{" "}
+          <Link href="/terms" className="text-primary hover:underline underline-offset-4">
+            Terms of Service
+          </Link>{" "}
+          and{" "}
+          <Link href="/privacy" className="text-primary hover:underline underline-offset-4">
+            Privacy Policy
+          </Link>
+          .
+        </div>
       </div>
     </div>
   )
