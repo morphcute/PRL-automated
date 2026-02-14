@@ -103,7 +103,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     ];
 
     // Select mapping based on job type
-    // 5v5, 3v3, verifier -> Use Online Mapping
+    // 5v5, 3v3 -> Use Online Mapping
     // Onsite -> Use Onsite Mapping
     const groups = (job.type === "onsite") ? groupsOnsite : groupsOnline;
 
@@ -116,6 +116,185 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
       }
       return strVal;
     };
+
+    // --- Special Handling for Verifier Mode ---
+    // If job.type === "verifier", we skip the standard team transformation
+    // and process the sheet exactly as requested: 
+    // Read C(IGN), D(Server), E(ID) -> Write Status to F
+    
+    if (job.type === "verifier") {
+       await updateProgress(10, "Starting Verifier Mode...");
+       
+       // In verifier mode, we assume the user provided a spreadsheet with data already populated.
+       // The requirement is to read specific columns and update the status column IN PLACE.
+       // However, this function is designed to READ from Source and WRITE to Target.
+       // To adapt this without breaking the "Source -> Target" model:
+       // 1. We will read the source sheet (C, D, E).
+       // 2. We will verify the IDs.
+       // 3. We will write the result (IGN + Status) back to the TARGET sheet in a similar format.
+       
+       // BUT, the user prompt implies updating the sheet in place ("checking this columns and adding the result... in Column F").
+       // Since this is a "Sync" job that defines a Source and Target, let's stick to the pattern:
+       // Read Source -> Verify -> Write to Target (copying the structure).
+       
+       // Source Columns based on user description:
+       // Col A (Index 0) = No.
+       // Col B (Index 1) = Players Name
+       // Col C (Index 2) = IGN
+       // Col D (Index 3) = Server
+       // Col E (Index 4) = User ID
+       
+       const verifierRows: any[][] = [["No.", "Players Name", "Players IGN", "# Server", "# UID", "Status"]];
+       
+       // Batch Verification Logic for Verifier Mode
+       const verifierQueue: { no: string, name: string, ign: string, server: string, uid: string, rowIndex: number }[] = [];
+       
+       for (let r = 0; r < sourceRows.length; r++) {
+          const row = sourceRows[r];
+          // Ensure we don't access out of bounds
+          const no = cleanValue(row[0]);     // Col A
+          const name = cleanValue(row[1]);   // Col B
+          const ign = cleanValue(row[2]);    // Col C
+          const server = cleanValue(row[3]); // Col D
+          const uid = cleanValue(row[4]);    // Col E
+          
+          if (uid && server) {
+             verifierQueue.push({ no, name, ign, server, uid, rowIndex: r });
+          } else if (ign || server || uid || name || no) {
+             // Keep incomplete rows to maintain structure if they have *some* data
+             verifierQueue.push({ no, name, ign, server, uid, rowIndex: r });
+          } else {
+             // Keep empty rows to maintain structure
+             verifierQueue.push({ no: "", name: "", ign: "", server: "", uid: "", rowIndex: r });
+          }
+       }
+       
+       const totalToVerify = verifierQueue.length;
+       let completedCount = 0;
+       const BATCH_SIZE = 10;
+       
+       // Process queue
+       for (let i = 0; i < verifierQueue.length; i += BATCH_SIZE) {
+          const batch = verifierQueue.slice(i, i + BATCH_SIZE);
+          
+          await Promise.all(batch.map(async (item) => {
+             let status = "";
+             let finalIgn = item.ign;
+             
+             if (item.uid && item.server) {
+                try {
+                   const result = await verifyMlbbId(item.uid, item.server);
+                   if (result.success && result.ign) {
+                      finalIgn = result.ign;
+                      status = "Verified";
+                   } else {
+                      status = "Not Found";
+                   }
+                } catch (e) {
+                   console.error(`Verifier error for ${item.uid}`, e);
+                   // Don't fail the whole job, just mark this row
+                   status = "Error"; 
+                }
+             }
+             
+             // Store result in the row: A, B, C, D, E, F
+             verifierRows.push([item.no, item.name, finalIgn, item.server, item.uid, status]);
+          }));
+          
+          completedCount += batch.length;
+          const progress = 10 + Math.floor((completedCount / totalToVerify) * 80);
+          await updateProgress(progress, `Verifying IDs: ${completedCount}/${totalToVerify}`);
+       }
+       
+       // Write to Target
+       await updateProgress(95, "Writing results...");
+       
+       // Reuse the existing sheet writing logic, but with our new `verifierRows`
+       // We need to bypass the standard loop below.
+       
+       // ... existing sheet creation/clearing logic ...
+       const targetId = job.targetSpreadsheetId;
+       const TAB_NAME = job.sheetName || "Pre Registered List";
+       let targetSheetId: number | null = null;
+
+       const targetSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId: targetId });
+       let targetSheet = targetSpreadsheet.data.sheets?.find(s => s.properties?.title === TAB_NAME);
+       
+       // Sheet1 renaming logic (reused)
+       if (!targetSheet) {
+          const sheet1 = targetSpreadsheet.data.sheets?.find(s => s.properties?.title === "Sheet1");
+          if (sheet1) {
+             await sheets.spreadsheets.batchUpdate({
+                spreadsheetId: targetId,
+                requestBody: {
+                   requests: [{
+                      updateSheetProperties: {
+                         properties: { sheetId: sheet1.properties?.sheetId, title: TAB_NAME },
+                         fields: "title"
+                      }
+                   }]
+                }
+             });
+             targetSheetId = sheet1.properties?.sheetId || 0;
+          }
+       } else {
+          targetSheetId = targetSheet.properties?.sheetId || 0;
+       }
+       
+       if (targetSheetId === null && !targetSheet) {
+          const createResp = await sheets.spreadsheets.batchUpdate({
+             spreadsheetId: targetId,
+             requestBody: { requests: [{ addSheet: { properties: { title: TAB_NAME } } }] }
+          });
+          targetSheetId = createResp.data.replies?.[0].addSheet?.properties?.sheetId || 0;
+       }
+       
+       // Write Verifier Data
+       if (targetSheetId !== null) {
+          await sheets.spreadsheets.values.clear({ spreadsheetId: targetId, range: `'${TAB_NAME}'!A:Z` });
+          if (verifierRows.length > 0) {
+             await sheets.spreadsheets.values.update({
+                spreadsheetId: targetId,
+                range: `'${TAB_NAME}'!A1`,
+                valueInputOption: "USER_ENTERED",
+                requestBody: { values: verifierRows },
+             });
+          }
+          
+          // Apply Formatting for Verifier
+          const requests: any[] = [];
+          // Header
+          requests.push({
+             repeatCell: {
+                range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 4 },
+                cell: { userEnteredFormat: { backgroundColor: { red: 0.1, green: 0.3, blue: 0.2 }, textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true } } },
+                fields: "userEnteredFormat(backgroundColor,textFormat)"
+             }
+          });
+          // Conditional Formatting
+          requests.push({
+             addConditionalFormatRule: {
+                rule: {
+                   ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 3, endColumnIndex: 4 }],
+                   booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] }, format: { backgroundColor: { red: 0.8, green: 1, blue: 0.8 } } }
+                }, index: 0
+             }
+          });
+          requests.push({
+             addConditionalFormatRule: {
+                rule: {
+                   ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 3, endColumnIndex: 4 }],
+                   booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] }, format: { backgroundColor: { red: 1, green: 0.8, blue: 0.8 } } }
+                }, index: 1
+             }
+          });
+          
+          await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
+       }
+       
+       return { rowsWritten: verifierRows.length, success: true };
+    }
+    // --- End Verifier Mode Handling ---
 
     let teamCount = 1;
     // We'll collect ranges to merge: { startRow, endRow } (0-based inclusive/exclusive logic of Sheets API)

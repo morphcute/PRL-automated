@@ -9,10 +9,11 @@ export async function verifyMlbbId(userId: string, zoneId: string): Promise<Mlbb
   const url = "https://moogold.com/wp-content/plugins/id-validation-new/id-validation-ajax.php";
   
   // Construct URL-encoded payload as expected by the PHP endpoint
+  // Updated payload structure based on user feedback
   const payload = new URLSearchParams();
   payload.append("attribute_amount", "Weekly Pass");
-  payload.append("text-5f6f144f8ffee", userId);
-  payload.append("text-1601115253775", zoneId);
+  payload.append("text-5f6f144f8ffee", userId); // User ID
+  payload.append("text-1601115253775", zoneId); // Zone ID
   payload.append("quantity", "1");
   payload.append("add-to-cart", "15145");
   payload.append("product_id", "15145");
@@ -34,24 +35,30 @@ export async function verifyMlbbId(userId: string, zoneId: string): Promise<Mlbb
         return { success: false, error: `HTTP Error: ${response.status}` };
     }
 
-    const json = await response.json();
+    const text = await response.text();
+    let json;
+    try {
+       json = JSON.parse(text);
+    } catch (e) {
+       return { success: false, error: "Invalid JSON response" };
+    }
     
-    // Response format example: 
+    // Response format example from user: 
     // {"title":"Validation","message":"Original Server Name: PlayerName\nRegion: ID","icon":"success","status":"true"}
     
     if (json && json.message) {
+      // Logic from user's script: split by newline, look for "Name"
       const lines = json.message.split("\n");
       for (const line of lines) {
         const parts = line.split(":");
-        // Look for "Name" or "Original Server Name"
-        if (parts[0].trim().toLowerCase().includes("name")) {
+        if (parts[0] && parts[0].trim().toLowerCase().indexOf("name") !== -1) {
           const name = parts.slice(1).join(":").trim();
           return { success: true, ign: name };
         }
       }
     }
 
-    return { success: false, error: "Player not found or invalid response format" };
+    return { success: false, error: "Player not found" };
 
   } catch (error: any) {
     console.error("MLBB Verification Error:", error);
