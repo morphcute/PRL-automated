@@ -6,6 +6,7 @@ export const JobTypeSchema = z.enum(["5v5", "3v3", "onsite"]);
 export const SyncJobSchema = z.object({
   name: z.string().min(1, "Name is required"),
   type: JobTypeSchema.default("5v5"),
+  validationEnabled: z.boolean().default(false),
   spreadsheetId: z.string().min(1, "Response Sheet Link is required"),
   targetSpreadsheetName: z.string().min(1, "Target Name is required"),
   isEnabled: z.boolean().default(true),

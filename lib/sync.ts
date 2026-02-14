@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { SyncJob } from "@prisma/client";
 import { google } from "googleapis";
 import { getUserAuth } from "./google";
+import { verifyMlbbId } from "./mlbb";
 
 export async function syncPreRegisteredList(job: SyncJob) {
   console.log(`Starting sync for job ${job.id} (${job.name})`);
@@ -47,9 +48,13 @@ export async function syncPreRegisteredList(job: SyncJob) {
     // Group 4: U(20), V(21), W(22), X(23)
     // Group 5: Z(25), AA(26), AB(27), AC(28)
     
-    const transformedRows: any[][] = [
-      ["No.", "Players Name", "Players IGN", "# Server", "# UID"] // Headers
-    ];
+    // Add "Status" header if validation is enabled
+    const headers = ["No.", "Players Name", "Players IGN", "# Server", "# UID"];
+    if (job.validationEnabled) {
+      headers.push("Status");
+    }
+
+    const transformedRows: any[][] = [headers];
 
     const groups = [
       [3, 4, 5, 6],      // Group 1
@@ -110,13 +115,44 @@ export async function syncPreRegisteredList(job: SyncJob) {
            uVal = temp;
         }
 
-        transformedRows.push([
+        let currentIgn = ign ? String(ign).trim() : "";
+        let status = "";
+
+        // Verification Logic
+        if (job.validationEnabled) {
+          if (sVal && uVal) {
+             try {
+                // Wait for verification (sequential to avoid rate limits, or we could batch)
+                // For now, let's do sequential to be safe with the external API
+                const result = await verifyMlbbId(uVal, sVal);
+                if (result.success && result.ign) {
+                   currentIgn = result.ign;
+                   status = "Verified";
+                } else {
+                   status = "Not Found";
+                }
+             } catch (e) {
+                console.error(`Verification failed for ${uVal}|${sVal}`, e);
+                status = "Error";
+             }
+          } else {
+             status = ""; // No ID/Server to verify
+          }
+        }
+
+        const rowData = [
           noCol,
           name ? String(name).trim() : "",
-          ign ? String(ign).trim() : "",
+          currentIgn,
           sVal,
           uVal
-        ]);
+        ];
+
+        if (job.validationEnabled) {
+          rowData.push(status);
+        }
+
+        transformedRows.push(rowData);
       }
       
       // Record merge range for the "No." column (Col 0)
@@ -209,7 +245,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
                     startRowIndex: 0,
                     endRowIndex: 1,
                     startColumnIndex: 0,
-                    endColumnIndex: 5
+                    endColumnIndex: job.validationEnabled ? 6 : 5
                 },
                 cell: {
                     userEnteredFormat: {
@@ -231,7 +267,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
                     startRowIndex: 0, // Include header in borders
                     endRowIndex: rows.length,
                     startColumnIndex: 0,
-                    endColumnIndex: 5
+                    endColumnIndex: job.validationEnabled ? 6 : 5
                 },
                 cell: {
                     userEnteredFormat: {
@@ -249,6 +285,59 @@ export async function syncPreRegisteredList(job: SyncJob) {
                 fields: "userEnteredFormat(borders,horizontalAlignment,verticalAlignment,wrapStrategy)"
             }
         });
+
+        // Conditional Formatting for Status Column (if enabled)
+        if (job.validationEnabled) {
+             // Green for "Verified"
+             requests.push({
+                addConditionalFormatRule: {
+                    rule: {
+                        ranges: [{
+                            sheetId: targetSheetId,
+                            startRowIndex: 1,
+                            endRowIndex: rows.length,
+                            startColumnIndex: 5, // Status Column (F)
+                            endColumnIndex: 6
+                        }],
+                        booleanRule: {
+                            condition: {
+                                type: "TEXT_EQ",
+                                values: [{ userEnteredValue: "Verified" }]
+                            },
+                            format: {
+                                backgroundColor: { red: 0.8, green: 1, blue: 0.8 } // Light Green
+                            }
+                        }
+                    },
+                    index: 0
+                }
+             });
+
+             // Red for "Not Found"
+             requests.push({
+                addConditionalFormatRule: {
+                    rule: {
+                        ranges: [{
+                            sheetId: targetSheetId,
+                            startRowIndex: 1,
+                            endRowIndex: rows.length,
+                            startColumnIndex: 5,
+                            endColumnIndex: 6
+                        }],
+                        booleanRule: {
+                            condition: {
+                                type: "TEXT_EQ",
+                                values: [{ userEnteredValue: "Not Found" }]
+                            },
+                            format: {
+                                backgroundColor: { red: 1, green: 0.8, blue: 0.8 } // Light Red
+                            }
+                        }
+                    },
+                    index: 1
+                }
+             });
+        }
 
         // 3. Merge "No." Columns
         for (const range of mergeRanges) {
@@ -273,7 +362,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
                         startRowIndex: range.endRow - 1, // Last row of the block
                         endRowIndex: range.endRow,
                         startColumnIndex: 0,
-                        endColumnIndex: 5
+                        endColumnIndex: job.validationEnabled ? 6 : 5
                     },
                     bottom: { style: "SOLID_MEDIUM" } // Thicker border to separate teams
                 }
@@ -288,7 +377,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
                     startRowIndex: 0,
                     endRowIndex: 1,
                     startColumnIndex: 0,
-                    endColumnIndex: 5
+                    endColumnIndex: job.validationEnabled ? 6 : 5
                 },
                 bottom: { style: "SOLID_MEDIUM" }
             }

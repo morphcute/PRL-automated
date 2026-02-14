@@ -15,6 +15,7 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
     defaultValues: initialData || {
       name: "",
       type: "5v5",
+      validationEnabled: false,
       spreadsheetId: "",
       sheetName: "Pre Registered List",
       runMode: "manual",
@@ -26,6 +27,7 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
 
   const runMode = form.watch("runMode");
   const jobType = form.watch("type");
+  const validationEnabled = form.watch("validationEnabled");
 
   const handleSubmit = async (data: SyncJobInput) => {
     if (onSubmit) {
@@ -103,6 +105,24 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div className="pt-4">
+                <label className="flex items-center gap-4 cursor-pointer group/toggle">
+                  <div className="relative">
+                    <input 
+                      type="checkbox" 
+                      {...form.register("validationEnabled")} 
+                      className="sr-only"
+                    />
+                    <div className={`w-14 h-8 rounded-full transition-colors duration-300 ${validationEnabled ? 'bg-green-500' : 'bg-white/10'}`}></div>
+                    <div className={`absolute left-1 top-1 w-6 h-6 rounded-full bg-white transition-transform duration-300 ${validationEnabled ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                  </div>
+                  <div>
+                    <span className="block text-lg font-bold text-white group-hover/toggle:text-green-300 transition-colors">Enable MLBB ID Verification</span>
+                    <span className="text-sm text-white/50">Automatically verify Player ID & Zone ID with MooGold</span>
+                  </div>
+                </label>
               </div>
 
             </div>
