@@ -21,7 +21,7 @@ export default function LoginPage() {
         <form
           action={async () => {
             "use server"
-            await signIn("google", { redirectTo: "/" })
+            await signIn("google", { redirectTo: "/dashboard" })
           }}
         >
           <button className="w-full flex items-center justify-center gap-3 bg-white text-black hover:bg-white/90 px-6 py-3 rounded-lg transition-colors font-medium text-sm">
