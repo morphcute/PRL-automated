@@ -24,7 +24,7 @@ export default function NewJobPage() {
         throw new Error(errorData.error || "Failed to create job");
       }
       
-      router.push("/");
+      router.push("/dashboard");
       router.refresh();
     } catch (error: any) {
       console.error(error);

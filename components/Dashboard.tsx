@@ -171,7 +171,7 @@ export default function Dashboard() {
             Create Job
           </Link>
           <button 
-            onClick={() => signOut()}
+            onClick={() => signOut({ callbackUrl: "/" })}
             className="px-4 py-2 rounded-lg border border-white/10 hover:bg-white/5 text-sm text-muted-foreground hover:text-white transition-colors"
           >
             Sign Out
