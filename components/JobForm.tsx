@@ -64,7 +64,7 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
           <p className="text-muted-foreground mt-1">Set up your automation parameters below.</p>
         </div>
         <Link 
-          href="/"
+          href="/dashboard"
           className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10"
         >
           Back to Dashboard

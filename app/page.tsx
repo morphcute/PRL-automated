@@ -1,6 +1,9 @@
 import Link from "next/link";
+import { auth } from "@/lib/auth";
 
-export default function HomePage() {
+export default async function HomePage() {
+  const session = await auth();
+
   return (
     <div className="flex min-h-screen flex-col">
       {/* Navigation */}
@@ -17,12 +20,21 @@ export default function HomePage() {
           <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
         </nav>
-        <Link 
-          href="/login" 
-          className="px-4 py-2 rounded-lg bg-primary hover:bg-blue-600 text-white text-sm font-medium transition-colors"
-        >
-          Sign In
-        </Link>
+        {session ? (
+          <Link 
+            href="/dashboard" 
+            className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10"
+          >
+            Dashboard
+          </Link>
+        ) : (
+          <Link 
+            href="/login" 
+            className="px-4 py-2 rounded-lg bg-primary hover:bg-blue-600 text-white text-sm font-medium transition-colors"
+          >
+            Sign In
+          </Link>
+        )}
       </header>
 
       {/* Hero Section */}
@@ -41,10 +53,10 @@ export default function HomePage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8">
             <Link 
-              href="/login" 
+              href={session ? "/dashboard" : "/login"} 
               className="px-8 py-3.5 rounded-xl bg-primary hover:bg-blue-600 text-white font-semibold transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2"
             >
-              Get Started
+              {session ? "Go to Dashboard" : "Get Started"}
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
             </Link>
             <Link 
