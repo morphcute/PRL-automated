@@ -116,7 +116,7 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
               />
               <label htmlFor="validationEnabled" className="cursor-pointer">
                 <span className="block text-sm font-medium text-white">Enable MLBB ID Verification</span>
-                <span className="block text-xs text-muted-foreground">Verify Player ID & Zone ID with MooGold API</span>
+                <span className="block text-xs text-muted-foreground">Verify Player ID & Zone ID</span>
               </label>
             </div>
           )}
