@@ -4,8 +4,22 @@ import { google } from "googleapis";
 import { getUserAuth } from "./google";
 import { verifyMlbbId } from "./mlbb";
 
-export async function syncPreRegisteredList(job: SyncJob) {
+export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
   console.log(`Starting sync for job ${job.id} (${job.name})`);
+
+  // Helper to update progress
+  const updateProgress = async (percentage: number) => {
+    if (runId) {
+      try {
+        await prisma.syncRun.update({
+          where: { id: runId },
+          data: { progress: Math.min(Math.max(percentage, 0), 100) }
+        });
+      } catch (e) {
+        console.error("Failed to update progress:", e);
+      }
+    }
+  };
 
   if (!job.userId) {
     throw new Error("Job must belong to a user to run sync");
@@ -21,6 +35,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
 
   try {
     // 1. Read Source (Responses Sheet)
+    await updateProgress(5);
     // Get spreadsheet to find the first sheet name (assuming data is in first tab)
     const sourceSpreadsheet = await sheets.spreadsheets.get({
       spreadsheetId: job.spreadsheetId,
@@ -77,8 +92,21 @@ export async function syncPreRegisteredList(job: SyncJob) {
     let teamCount = 1;
     // We'll collect ranges to merge: { startRow, endRow } (0-based inclusive/exclusive logic of Sheets API)
     const mergeRanges: { startRow: number, endRow: number }[] = [];
+    
+    // Total rows to process
+    const totalSourceRows = sourceRows.length;
+    let processedRows = 0;
 
     for (const row of sourceRows) {
+      processedRows++;
+      
+      // Update Progress every few rows or at least every 10%
+      if (totalSourceRows > 0 && processedRows % Math.max(1, Math.floor(totalSourceRows / 10)) === 0) {
+        // Map 10% to 80% of progress for processing
+        const percentage = 10 + Math.floor((processedRows / totalSourceRows) * 70);
+        await updateProgress(percentage);
+      }
+
       // Check if row has any data in the relevant columns
       let hasAnyData = false;
       for (const grp of groups) {
@@ -168,6 +196,8 @@ export async function syncPreRegisteredList(job: SyncJob) {
 
     const rows = transformedRows;
     
+    await updateProgress(85);
+
     // 2. Write to Target (Pre Registered List)
     const targetId = job.targetSpreadsheetId;
     const TAB_NAME = job.sheetName || "Pre Registered List";
@@ -235,6 +265,7 @@ export async function syncPreRegisteredList(job: SyncJob) {
 
     // 3. Apply Formatting (Borders, Colors, Merging)
     if (targetSheetId !== null && rows.length > 0) {
+        await updateProgress(95);
         const requests: any[] = [];
 
         // 1. Format Header (Row 0)

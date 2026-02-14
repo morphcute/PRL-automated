@@ -56,12 +56,12 @@ export default function Dashboard() {
   // Background Scheduler Simulation (Auto Pilot Heartbeat)
   // This ensures scheduled jobs run while the dashboard is open, even without external cron.
   useEffect(() => {
+    // 1. Scheduler Check (every 60s)
     const checkSchedule = async () => {
       try {
         const res = await fetch("/api/jobs/check", { method: "POST" });
         if (res.ok) {
           const data = await res.json();
-          // If any job was actually processed (attempted run), refresh the UI
           if (data.results && data.results.length > 0) {
             fetchJobs();
           }
@@ -71,17 +71,24 @@ export default function Dashboard() {
       }
     };
 
-    // Check every 60 seconds
-    const intervalId = setInterval(checkSchedule, 60000);
-    
-    // Also run once on mount (after a short delay to let initial load finish)
-    const timeoutId = setTimeout(checkSchedule, 5000);
+    const scheduleInterval = setInterval(checkSchedule, 60000);
+    const scheduleTimeout = setTimeout(checkSchedule, 5000);
+
+    // 2. Progress Polling (every 2s if any job is running)
+    const pollProgress = () => {
+       const hasRunning = jobs.some(j => j.runs && j.runs[0]?.status === "running");
+       if (hasRunning) {
+          fetchJobs();
+       }
+    };
+    const progressInterval = setInterval(pollProgress, 2000);
 
     return () => {
-      clearInterval(intervalId);
-      clearTimeout(timeoutId);
+      clearInterval(scheduleInterval);
+      clearTimeout(scheduleTimeout);
+      clearInterval(progressInterval);
     };
-  }, []);
+  }, [jobs]); // Re-run effect when jobs change to update polling logic if needed
 
   const handleRunClick = (job: JobWithRuns) => {
     setSelectedJob(job);
@@ -265,20 +272,35 @@ export default function Dashboard() {
                   </div>
 
                   {/* Status Card */}
-                  <div className="bg-white/5 rounded-2xl p-5 border border-white/5 flex flex-col justify-between">
+                  <div className="bg-white/5 rounded-2xl p-5 border border-white/5 flex flex-col justify-between relative overflow-hidden">
+                    {/* Progress Bar Background (Only if running) */}
+                    {job.runs[0]?.status === "running" && (
+                      <div 
+                        className="absolute bottom-0 left-0 h-1 bg-green-500 transition-all duration-500 ease-out"
+                        style={{ width: `${job.runs[0].progress || 0}%` }}
+                      ></div>
+                    )}
+                    
                     <div className="flex justify-between items-start mb-2">
                       <span className="text-xs font-bold text-white/30 uppercase tracking-wider">System Status</span>
                       <div className={`w-2 h-2 rounded-full ${
-                        job.runs[0]?.status === "success" ? "bg-green-500 animate-pulse" : 
+                        job.runs[0]?.status === "running" ? "bg-blue-500 animate-ping" : 
+                        job.runs[0]?.status === "success" ? "bg-green-500" : 
                         job.runs[0]?.status === "failed" ? "bg-red-500" : "bg-white/20"
                       }`}></div>
                     </div>
                     <div>
-                      <div className={`text-lg font-bold ${
+                      <div className={`text-lg font-bold flex items-center gap-2 ${
+                        job.runs[0]?.status === "running" ? "text-blue-400" : 
                         job.runs[0]?.status === "success" ? "text-green-400" : 
                         job.runs[0]?.status === "failed" ? "text-red-400" : "text-white/40"
                       }`}>
                         {job.runs[0]?.status ? job.runs[0].status.toUpperCase() : "PENDING"}
+                        {job.runs[0]?.status === "running" && (
+                          <span className="text-sm font-mono opacity-80">
+                            {job.runs[0].progress || 0}%
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-white/40 mt-1">
                         {job.runs[0] 

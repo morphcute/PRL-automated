@@ -26,43 +26,51 @@ export async function POST(
     data: {
       jobId: job.id,
       status: "running",
+      progress: 0,
       startedAt: now,
     },
   });
 
-  try {
-    const result = await syncPreRegisteredList(job);
+  // Run in background (do not await)
+  (async () => {
+    try {
+      const result = await syncPreRegisteredList(job, runRecord.id);
 
-    // Update SyncRun (success)
-    await prisma.syncRun.update({
-      where: { id: runRecord.id },
-      data: {
-        status: "success",
-        completedAt: new Date(),
-        rowsWritten: result.rowsWritten,
-      },
-    });
+      // Update SyncRun (success)
+      await prisma.syncRun.update({
+        where: { id: runRecord.id },
+        data: {
+          status: "success",
+          progress: 100,
+          completedAt: new Date(),
+          rowsWritten: result.rowsWritten,
+        },
+      });
 
-    // Update Job lastRunAt
-    await prisma.syncJob.update({
-      where: { id: job.id },
-      data: { lastRunAt: now },
-    });
+      // Update Job lastRunAt
+      await prisma.syncJob.update({
+        where: { id: job.id },
+        data: { lastRunAt: now },
+      });
 
-    return NextResponse.json({ rowsWritten: result.rowsWritten });
-  } catch (error: any) {
-    console.error(`Manual run for job ${job.id} failed:`, error);
-    
-    // Update SyncRun (failed)
-    await prisma.syncRun.update({
-      where: { id: runRecord.id },
-      data: {
-        status: "failed",
-        completedAt: new Date(),
-        error: error.message || "Unknown error",
-      },
-    });
+    } catch (error: any) {
+      console.error(`Manual run for job ${job.id} failed:`, error);
+      
+      // Update SyncRun (failed)
+      await prisma.syncRun.update({
+        where: { id: runRecord.id },
+        data: {
+          status: "failed",
+          completedAt: new Date(),
+          error: error.message || "Unknown error",
+        },
+      });
+    }
+  })();
 
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  return NextResponse.json({ 
+    success: true, 
+    runId: runRecord.id,
+    message: "Job started in background" 
+  });
 }
