@@ -304,13 +304,41 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
       spreadsheetId: targetId,
     });
 
-    const targetSheet = targetSpreadsheet.data.sheets?.find(
+    // Check if TAB_NAME exists
+    let targetSheet = targetSpreadsheet.data.sheets?.find(
       (s) => s.properties?.title === TAB_NAME
     );
 
-    if (targetSheet) {
-      targetSheetId = targetSheet.properties?.sheetId || 0;
-      
+    // Special Handling: If "Sheet1" exists and it's the only sheet (or we want to reuse it), rename it to TAB_NAME
+    if (!targetSheet) {
+       const sheet1 = targetSpreadsheet.data.sheets?.find(
+          (s) => s.properties?.title === "Sheet1"
+       );
+       
+       if (sheet1) {
+          // Rename Sheet1 to TAB_NAME
+          await sheets.spreadsheets.batchUpdate({
+             spreadsheetId: targetId,
+             requestBody: {
+                requests: [{
+                   updateSheetProperties: {
+                      properties: {
+                         sheetId: sheet1.properties?.sheetId,
+                         title: TAB_NAME
+                      },
+                      fields: "title"
+                   }
+                }]
+             }
+          });
+          targetSheetId = sheet1.properties?.sheetId || 0;
+          console.log(`Renamed 'Sheet1' to '${TAB_NAME}'`);
+       }
+    } else {
+       targetSheetId = targetSheet.properties?.sheetId || 0;
+    }
+
+    if (targetSheetId !== null) {
       // Clear existing content
       await sheets.spreadsheets.values.clear({
         spreadsheetId: targetId,
@@ -326,10 +354,10 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
           requestBody: { values: rows },
         });
       }
-      console.log(`Updated existing tab '${TAB_NAME}' in target sheet`);
+      console.log(`Updated tab '${TAB_NAME}'`);
 
     } else {
-      // Create the sheet (tab)
+      // Create the sheet (tab) if Sheet1 wasn't found/renamed and target doesn't exist
       const createResp = await sheets.spreadsheets.batchUpdate({
         spreadsheetId: targetId,
         requestBody: {
@@ -356,7 +384,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
           requestBody: { values: rows },
         });
       }
-      console.log(`Created and populated new tab '${TAB_NAME}' in target sheet`);
+      console.log(`Created and populated new tab '${TAB_NAME}'`);
     }
 
     // 3. Apply Formatting (Borders, Colors, Merging)
