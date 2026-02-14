@@ -8,12 +8,15 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
   console.log(`Starting sync for job ${job.id} (${job.name})`);
 
   // Helper to update progress
-  const updateProgress = async (percentage: number) => {
+  const updateProgress = async (percentage: number, message?: string) => {
     if (runId) {
       try {
         await prisma.syncRun.update({
           where: { id: runId },
-          data: { progress: Math.min(Math.max(percentage, 0), 100) }
+          data: { 
+            progress: Math.min(Math.max(percentage, 0), 100),
+            progressMessage: message 
+          }
         });
       } catch (e) {
         console.error("Failed to update progress:", e);
@@ -35,7 +38,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
 
   try {
     // 1. Read Source (Responses Sheet)
-    await updateProgress(5);
+    await updateProgress(5, "Reading source data...");
     // Get spreadsheet to find the first sheet name (assuming data is in first tab)
     const sourceSpreadsheet = await sheets.spreadsheets.get({
       spreadsheetId: job.spreadsheetId,
@@ -52,7 +55,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     const sourceRows = sourceData.data.values || [];
     
     // Determine Team Size based on Job Type
-    // 3v3 = 3 players, 5v5/onsite = 5 players
+    // 3v3 = 3 players, 5v5/onsite/verifier = 5 players
     const teamSize = job.type === "3v3" ? 3 : 5;
     
     // Transform Data
@@ -71,13 +74,38 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
 
     const transformedRows: any[][] = [headers];
 
-    const groups = [
+    // 5v5/3v3 Online Mappings (Tighter Gap)
+    // Group 1: D(3), E(4), F(5), G(6)
+    // Group 2: J(9), K(10), L(11), M(12)
+    // Group 3: O(14), P(15), Q(16), R(17)
+    // Group 4: T(19), U(20), V(21), W(22)
+    // Group 5: Y(24), Z(25), AA(26), AB(27)
+    const groupsOnline = [
+      [3, 4, 5, 6],    // Group 1
+      [9, 10, 11, 12], // Group 2
+      [14, 15, 16, 17],// Group 3
+      [19, 20, 21, 22],// Group 4
+      [24, 25, 26, 27] // Group 5
+    ];
+
+    // Onsite Mappings (Wider Gap)
+    // Group 1: D(3), E(4), F(5), G(6)
+    // Group 2: K(10), L(11), M(12), N(13)
+    // Group 3: P(15), Q(16), R(17), S(18)
+    // Group 4: U(20), V(21), W(22), X(23)
+    // Group 5: Z(25), AA(26), AB(27), AC(28)
+    const groupsOnsite = [
       [3, 4, 5, 6],      // Group 1
       [10, 11, 12, 13],  // Group 2
       [15, 16, 17, 18],  // Group 3
       [20, 21, 22, 23],  // Group 4
       [25, 26, 27, 28]   // Group 5
     ];
+
+    // Select mapping based on job type
+    // 5v5, 3v3, verifier -> Use Online Mapping
+    // Onsite -> Use Onsite Mapping
+    const groups = (job.type === "onsite") ? groupsOnsite : groupsOnline;
 
     const cleanValue = (val: any) => {
       if (!val) return "";
@@ -97,14 +125,95 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     const totalSourceRows = sourceRows.length;
     let processedRows = 0;
 
-    for (const row of sourceRows) {
+    // --- Optimization: Batch Verification ---
+    // Identify all IDs that need verification upfront
+    const verificationQueue: { uVal: string, sVal: string, rowIndex: number, colIndex: number }[] = [];
+
+    // Pre-scan loop to build verification queue
+    // This allows us to run verifications in parallel later
+    if (job.validationEnabled) {
+       await updateProgress(5, "Scanning for IDs to verify...");
+       for (let r = 0; r < sourceRows.length; r++) {
+          const row = sourceRows[r];
+          // Check for data
+          let hasAnyData = false;
+          for (const grp of groups) {
+             if (row[grp[0]] || row[grp[1]] || row[grp[2]] || row[grp[3]]) {
+                 hasAnyData = true;
+                 break;
+             }
+          }
+          if (!hasAnyData) continue;
+
+          for (let i = 0; i < teamSize; i++) {
+             const [nameIdx, ignIdx, serverIdx, uidIdx] = groups[i];
+             const server = row[serverIdx];
+             const uid = row[uidIdx];
+             
+             let sVal = cleanValue(server);
+             let uVal = cleanValue(uid);
+
+             // Auto-correct swapped
+             if (sVal.length >= 7 && uVal.length <= 6 && uVal.length > 0) {
+                const temp = sVal;
+                sVal = uVal;
+                uVal = temp;
+             }
+
+             // Only verify if both ID and Server are present
+             if (sVal && uVal) {
+                verificationQueue.push({ uVal, sVal, rowIndex: r, colIndex: i });
+             }
+          }
+       }
+    }
+
+    // Process Verification Queue in Batches (Parallel)
+    const BATCH_SIZE = 10; // 10 requests at a time
+    const verificationResults = new Map<string, { ign?: string, status: string }>();
+    
+    if (verificationQueue.length > 0) {
+       let completedCount = 0;
+       const totalToVerify = verificationQueue.length;
+
+       for (let i = 0; i < verificationQueue.length; i += BATCH_SIZE) {
+          const batch = verificationQueue.slice(i, i + BATCH_SIZE);
+          
+          // Run batch in parallel
+          await Promise.all(batch.map(async (item) => {
+             const key = `${item.rowIndex}-${item.colIndex}`;
+             try {
+                const result = await verifyMlbbId(item.uVal, item.sVal);
+                if (result.success && result.ign) {
+                   verificationResults.set(key, { ign: result.ign, status: "Verified" });
+                } else {
+                   verificationResults.set(key, { status: "Not Found" });
+                }
+             } catch (e) {
+                console.error(`Verification error for ${item.uVal}`, e);
+                verificationResults.set(key, { status: "Error" });
+             }
+          }));
+
+          completedCount += batch.length;
+          // Update progress based on verification (first 50% of progress bar)
+          const progress = Math.floor((completedCount / totalToVerify) * 50);
+          await updateProgress(progress, `Verifying IDs: ${completedCount}/${totalToVerify}`);
+       }
+    } else {
+       await updateProgress(50, "No IDs to verify, proceeding..."); // Jump to 50% if no verification needed
+    }
+
+    // --- End Optimization ---
+
+    for (let r = 0; r < sourceRows.length; r++) {
+      const row = sourceRows[r];
       processedRows++;
       
-      // Update Progress every few rows or at least every 10%
+      // Update Progress (remaining 50%)
       if (totalSourceRows > 0 && processedRows % Math.max(1, Math.floor(totalSourceRows / 10)) === 0) {
-        // Map 10% to 80% of progress for processing
-        const percentage = 10 + Math.floor((processedRows / totalSourceRows) * 70);
-        await updateProgress(percentage);
+        const percentage = 50 + Math.floor((processedRows / totalSourceRows) * 40);
+        await updateProgress(percentage, `Processing row ${processedRows}/${totalSourceRows}`);
       }
 
       // Check if row has any data in the relevant columns
@@ -134,9 +243,6 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
         let uVal = cleanValue(uid);
 
         // Auto-correct swapped Server and UID
-        // MLBB Server IDs are typically 4-5 digits (short)
-        // MLBB UIDs are typically 8-10 digits (long)
-        // Condition: If Server looks like a UID (>=7 chars) AND UID looks like a Server (<=6 chars)
         if (sVal.length >= 7 && uVal.length <= 6 && uVal.length > 0) {
            const temp = sVal;
            sVal = uVal;
@@ -146,26 +252,16 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
         let currentIgn = ign ? String(ign).trim() : "";
         let status = "";
 
-        // Verification Logic
+        // Retrieve pre-verified result
         if (job.validationEnabled) {
-          if (sVal && uVal) {
-             try {
-                // Wait for verification (sequential to avoid rate limits, or we could batch)
-                // For now, let's do sequential to be safe with the external API
-                const result = await verifyMlbbId(uVal, sVal);
-                if (result.success && result.ign) {
-                   currentIgn = result.ign;
-                   status = "Verified";
-                } else {
-                   status = "Not Found";
-                }
-             } catch (e) {
-                console.error(`Verification failed for ${uVal}|${sVal}`, e);
-                status = "Error";
-             }
-          } else {
-             status = ""; // No ID/Server to verify
-          }
+           const key = `${r}-${i}`;
+           const result = verificationResults.get(key);
+           if (result) {
+              status = result.status;
+              if (result.ign) {
+                 currentIgn = result.ign;
+              }
+           }
         }
 
         const rowData = [
@@ -196,7 +292,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
 
     const rows = transformedRows;
     
-    await updateProgress(85);
+    await updateProgress(90, "Writing to spreadsheet...");
 
     // 2. Write to Target (Pre Registered List)
     const targetId = job.targetSpreadsheetId;
@@ -265,7 +361,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
 
     // 3. Apply Formatting (Borders, Colors, Merging)
     if (targetSheetId !== null && rows.length > 0) {
-        await updateProgress(95);
+        await updateProgress(95, "Applying formatting...");
         const requests: any[] = [];
 
         // 1. Format Header (Row 0)

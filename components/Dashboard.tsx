@@ -290,16 +290,25 @@ export default function Dashboard() {
                       }`}></div>
                     </div>
                     <div>
-                      <div className={`text-lg font-bold flex items-center gap-2 ${
+                      <div className={`text-lg font-bold flex flex-col gap-1 ${
                         job.runs[0]?.status === "running" ? "text-blue-400" : 
                         job.runs[0]?.status === "success" ? "text-green-400" : 
                         job.runs[0]?.status === "failed" ? "text-red-400" : "text-white/40"
                       }`}>
-                        {job.runs[0]?.status ? job.runs[0].status.toUpperCase() : "PENDING"}
-                        {job.runs[0]?.status === "running" && (
-                          <span className="text-sm font-mono opacity-80">
-                            {job.runs[0].progress || 0}%
-                          </span>
+                        <div className="flex items-center gap-2">
+                          {job.runs[0]?.status ? job.runs[0].status.toUpperCase() : "PENDING"}
+                          {job.runs[0]?.status === "running" && (
+                            <span className="text-sm font-mono opacity-80">
+                              {job.runs[0].progress || 0}%
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Progress Message */}
+                        {job.runs[0]?.status === "running" && job.runs[0]?.progressMessage && (
+                           <span className="text-xs font-mono text-white/60 animate-pulse">
+                              {job.runs[0].progressMessage}
+                           </span>
                         )}
                       </div>
                       <div className="text-xs text-white/40 mt-1">

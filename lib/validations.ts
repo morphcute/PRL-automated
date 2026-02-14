@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const RunModeSchema = z.enum(["manual", "scheduled", "both"]);
-export const JobTypeSchema = z.enum(["5v5", "3v3", "onsite"]);
+export const JobTypeSchema = z.enum(["5v5", "3v3", "onsite", "verifier"]);
 
 export const SyncJobSchema = z.object({
   name: z.string().min(1, "Name is required"),

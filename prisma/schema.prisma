@@ -115,6 +115,7 @@ model SyncRun {
   completedAt DateTime?
   status      String   // "running", "success", "failed"
   progress    Int      @default(0)
+  progressMessage String? // "Checking 5/50", "Syncing...", etc.
   rowsWritten Int      @default(0)
   error       String?
 }

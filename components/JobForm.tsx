@@ -29,6 +29,11 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
   const jobType = form.watch("type");
   const validationEnabled = form.watch("validationEnabled");
 
+  // Force validation to true if jobType is 'verifier'
+  if (jobType === "verifier" && !validationEnabled) {
+     form.setValue("validationEnabled", true);
+  }
+
   const handleSubmit = async (data: SyncJobInput) => {
     if (onSubmit) {
       // Convert local time strings to UTC ISO strings before submitting
@@ -88,11 +93,11 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
               
               <div className="pt-4">
                 <label className="block text-base md:text-lg text-white/60 mb-3">Job Type</label>
-                <div className="grid grid-cols-3 gap-4">
-                  {(["5v5", "3v3", "onsite"] as const).map((type) => (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {(["5v5", "3v3", "onsite", "verifier"] as const).map((type) => (
                     <label key={type} className={`relative p-4 rounded-xl border-2 cursor-pointer transition-all duration-300 text-center ${
                       jobType === type 
-                        ? 'border-blue-400 bg-blue-500/10 text-white font-bold' 
+                        ? 'border-blue-400 bg-blue-500/10 text-white font-bold shadow-[0_0_15px_rgba(59,130,246,0.3)]' 
                         : 'border-white/10 text-white/40 hover:border-white/30 hover:bg-white/5'
                     }`}>
                       <input 
@@ -101,29 +106,31 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
                         {...form.register("type")} 
                         className="sr-only"
                       />
-                      <span className="uppercase">{type}</span>
+                      <span className="uppercase">{type === "verifier" ? "MLBB Verifier" : type}</span>
                     </label>
                   ))}
                 </div>
               </div>
 
-              <div className="pt-4">
-                <label className="flex items-center gap-4 cursor-pointer group/toggle">
-                  <div className="relative">
-                    <input 
-                      type="checkbox" 
-                      {...form.register("validationEnabled")} 
-                      className="sr-only"
-                    />
-                    <div className={`w-14 h-8 rounded-full transition-colors duration-300 ${validationEnabled ? 'bg-green-500' : 'bg-white/10'}`}></div>
-                    <div className={`absolute left-1 top-1 w-6 h-6 rounded-full bg-white transition-transform duration-300 ${validationEnabled ? 'translate-x-6' : 'translate-x-0'}`}></div>
-                  </div>
-                  <div>
-                    <span className="block text-lg font-bold text-white group-hover/toggle:text-green-300 transition-colors">Enable MLBB ID Verification</span>
-                    <span className="text-sm text-white/50">Automatically verify Player ID & Zone ID with MooGold</span>
-                  </div>
-                </label>
-              </div>
+              {jobType !== "verifier" && (
+                <div className="pt-4 animate-in fade-in slide-in-from-top-2">
+                  <label className="flex items-center gap-4 cursor-pointer group/toggle">
+                    <div className="relative">
+                      <input 
+                        type="checkbox" 
+                        {...form.register("validationEnabled")} 
+                        className="sr-only"
+                      />
+                      <div className={`w-14 h-8 rounded-full transition-colors duration-300 ${validationEnabled ? 'bg-green-500' : 'bg-white/10'}`}></div>
+                      <div className={`absolute left-1 top-1 w-6 h-6 rounded-full bg-white transition-transform duration-300 ${validationEnabled ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                    </div>
+                    <div>
+                      <span className="block text-lg font-bold text-white group-hover/toggle:text-green-300 transition-colors">Enable MLBB ID Verification</span>
+                      <span className="text-sm text-white/50">Automatically verify Player ID & Zone ID with MooGold</span>
+                    </div>
+                  </label>
+                </div>
+              )}
 
             </div>
           </div>
