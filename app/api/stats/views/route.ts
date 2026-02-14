@@ -4,15 +4,29 @@ import { prisma } from "@/lib/prisma";
 export async function POST(req: NextRequest) {
   try {
     const { page } = await req.json();
+    const pageName = page || 'home';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
-    // Track page view (simple implementation)
-    // In a real app, you'd want to use a proper analytics service
-    await prisma.$executeRaw`
-      INSERT INTO page_views (page, date, count) 
-      VALUES (${page || 'home'}, CURRENT_DATE, 1) 
-      ON CONFLICT (page, date) 
-      DO UPDATE SET count = page_views.count + 1
-    `;
+    // Track page view using Prisma upsert
+    await prisma.pageView.upsert({
+      where: {
+        page_date: {
+          page: pageName,
+          date: today,
+        },
+      },
+      update: {
+        count: {
+          increment: 1,
+        },
+      },
+      create: {
+        page: pageName,
+        date: today,
+        count: 1,
+      },
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
