@@ -41,7 +41,7 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
         setErrorMessage(error.message || "Failed to load job");
         setErrorModalOpen(true);
         // Delay redirect to let user see error
-        setTimeout(() => router.push("/"), 2000);
+        setTimeout(() => router.push("/dashboard"), 2000);
       } finally {
         setLoading(false);
       }
@@ -63,7 +63,7 @@ export default function EditJobPage({ params }: { params: Promise<{ id: string }
         throw new Error(errorData.error || "Failed to update job");
       }
       
-      router.push("/");
+      router.push("/dashboard");
       router.refresh();
     } catch (error: any) {
       console.error(error);

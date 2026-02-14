@@ -22,11 +22,14 @@ export async function runDueJobs() {
   for (const job of jobs) {
     // 2. Schedule Checks
     
-    // if startAt exists and now < startAt -> skip
+    // if startAt exists and now < startAt -> skip (job hasn't started yet)
+    // Allow jobs to run even if they missed their exact start time by up to 24 hours
     if (job.startAt && now < job.startAt) {
-      // results.push({ jobId: job.id, status: "skipped", reason: "Not started yet" });
       continue;
     }
+    
+    // If startAt is more than 24 hours in the past, consider it as "missed but still runnable"
+    // This handles the case where a job was scheduled for 12:31 AM but now it's 12:34 AM (or later)
 
     // if endAt exists and now > endAt -> set isEnabled=false and skip
     if (job.endAt && now > job.endAt) {
@@ -43,10 +46,56 @@ export async function runDueJobs() {
     if (job.intervalMinutes && job.lastRunAt) {
       const nextRun = new Date(job.lastRunAt.getTime() + job.intervalMinutes * 60000);
       if (now < nextRun) {
-        // results.push({ jobId: job.id, status: "skipped", reason: "Interval not reached" });
         continue;
       }
     }
+
+    const existingRun = await prisma.syncRun.findFirst({
+      where: { jobId: job.id, status: "running" },
+      select: { id: true },
+    });
+    if (existingRun) {
+      continue;
+    }
+
+    // Check if this job name has already been run successfully today
+    // This ensures auto-pilot runs once per job name, not per job ID
+    const isOneTimeAutoPilot = !job.intervalMinutes;
+    if (isOneTimeAutoPilot) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const existingSuccessfulRun = await prisma.syncRun.findFirst({
+        where: {
+          job: {
+            name: job.name, // Same job name
+            userId: job.userId, // Same user
+          },
+          status: "success",
+          startedAt: {
+            gte: today,
+            lt: tomorrow,
+          },
+        },
+      });
+
+      if (existingSuccessfulRun) {
+        // Skip this job but don't disable it - another job with the same name already ran successfully today
+        results.push({ jobId: job.id, status: "skipped", reason: "Job name already processed today" });
+        continue;
+      }
+    }
+
+    await prisma.syncJob.update({
+      where: { id: job.id },
+      data: {
+        lastRunAt: now,
+        // Only disable cron if this specific job ran successfully
+        // Don't disable based on job name - let other jobs with same name try to run
+      },
+    });
 
     // 3. Run Sync for eligible jobs
     // Create SyncRun record
@@ -71,16 +120,13 @@ export async function runDueJobs() {
         },
       });
 
-      // Update Job lastRunAt
-      await prisma.syncJob.update({
-        where: { id: job.id },
-        data: { 
-          lastRunAt: now,
-          // If it's a scheduled or auto-pilot job without an interval, 
-          // disable cronEnabled after it runs once successfully.
-          cronEnabled: !!job.intervalMinutes
-        },
-      });
+      // Only disable this specific job after successful completion
+      if (isOneTimeAutoPilot) {
+        await prisma.syncJob.update({
+          where: { id: job.id },
+          data: { cronEnabled: false },
+        });
+      }
 
       results.push({ jobId: job.id, status: "success", rows: result.rowsWritten });
     } catch (error: any) {
@@ -92,7 +138,6 @@ export async function runDueJobs() {
         data: {
           status: "failed",
           completedAt: new Date(),
-          error: error.message || "Unknown error",
         },
       });
       

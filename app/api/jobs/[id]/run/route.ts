@@ -67,7 +67,6 @@ export async function POST(
         data: {
           status: "failed",
           completedAt: new Date(),
-          error: error.message || "Unknown error",
         },
       });
     }

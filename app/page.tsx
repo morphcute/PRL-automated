@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { auth } from "@/lib/auth";
+import HomePageClient from "@/components/HomePageClient";
+import PageViewTracker from "@/components/PageViewTracker";
 
 export default async function HomePage() {
   const session = await auth();
 
   return (
     <div className="flex min-h-screen flex-col">
+      <PageViewTracker page="home" />
       {/* Navigation */}
       <header className="px-6 py-4 flex justify-between items-center border-b border-white/10 bg-black/20 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center gap-2">
@@ -107,6 +110,9 @@ export default async function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* Stats Section */}
+        <HomePageClient />
 
         {/* How It Works */}
         <section id="how-it-works" className="py-20 px-6 max-w-4xl mx-auto">

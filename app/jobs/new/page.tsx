@@ -23,13 +23,16 @@ export default function NewJobPage() {
         const errorData = await res.json();
         throw new Error(errorData.error || "Failed to create job");
       }
-      
-      router.push("/dashboard");
-      router.refresh();
+
+      router.replace("/dashboard");
     } catch (error: any) {
       console.error(error);
       setErrorMessage(error.message || "Failed to create job");
       setErrorModalOpen(true);
+      // Optional: Redirect back to dashboard if creation fails? 
+      // Usually we want to stay on the page to fix errors, 
+      // but if it's a critical error we might want to redirect.
+      // The user specifically said "after Create Job too".
     }
   };
 

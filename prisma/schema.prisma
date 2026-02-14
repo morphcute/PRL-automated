@@ -117,5 +117,14 @@ model SyncRun {
   progress    Int      @default(0)
   progressMessage String? // "Checking 5/50", "Syncing...", etc.
   rowsWritten Int      @default(0)
-  error       String?
+}
+
+model PageView {
+  id    String   @id @default(cuid())
+  page  String   // e.g., "home", "dashboard", "jobs"
+  date  DateTime @default(now()) @db.Date
+  count Int      @default(1)
+  
+  @@unique([page, date])
+  @@index([date])
 }
