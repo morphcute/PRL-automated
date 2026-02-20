@@ -21,6 +21,33 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
+    async signIn({ user, account }) {
+      if (account?.provider === "google" && account.providerAccountId && user?.id) {
+        try {
+          await prisma.account.updateMany({
+            where: {
+              provider: "google",
+              providerAccountId: account.providerAccountId,
+            },
+            data: {
+              userId: user.id,
+              access_token: account.access_token ?? undefined,
+              // Only overwrite refresh token when Google actually returns one.
+              ...(account.refresh_token ? { refresh_token: account.refresh_token } : {}),
+              expires_at: account.expires_at ?? undefined,
+              token_type: account.token_type ?? undefined,
+              scope: account.scope ?? undefined,
+              id_token: account.id_token ?? undefined,
+            },
+          });
+        } catch (error) {
+          console.error("Failed to update Google account tokens on sign-in:", error);
+        }
+      }
+
+      return true;
+    },
+
     session({ session, user }) {
       session.user.id = user.id
       return session
