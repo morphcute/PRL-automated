@@ -15,6 +15,10 @@ function escapeDriveQueryValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
+function normalizeSpreadsheetName(name: string): string {
+  return name.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 async function isUsableSpreadsheetFile(drive: drive_v3.Drive, fileId: string): Promise<boolean> {
   try {
     const file = await drive.files.get({
@@ -31,6 +35,47 @@ async function isUsableSpreadsheetFile(drive: drive_v3.Drive, fileId: string): P
   } catch {
     return false;
   }
+}
+
+async function findSpreadsheetIdByName(
+  drive: drive_v3.Drive,
+  targetName: string
+): Promise<string | null> {
+  const normalizedTarget = normalizeSpreadsheetName(targetName);
+  const escapedName = escapeDriveQueryValue(targetName);
+
+  const baseParams: drive_v3.Params$Resource$Files$List = {
+    fields: "files(id,name,modifiedTime,trashed,mimeType)",
+    supportsAllDrives: true,
+    includeItemsFromAllDrives: true,
+    pageSize: 100,
+    orderBy: "modifiedTime desc",
+  };
+
+  const queries = [
+    `name = '${escapedName}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+    `name contains '${escapedName}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+    `mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+  ];
+
+  for (const q of queries) {
+    const res = await drive.files.list({
+      ...baseParams,
+      q,
+    });
+
+    const files = res.data.files || [];
+    const exactMatch = files.find((file) => {
+      const fileName = file.name || "";
+      return normalizeSpreadsheetName(fileName) === normalizedTarget;
+    });
+
+    if (exactMatch?.id) {
+      return exactMatch.id;
+    }
+  }
+
+  return null;
 }
 
 function isDrivePermissionError(error: any): boolean {
@@ -140,6 +185,7 @@ export async function POST(req: NextRequest) {
     
     const targetName = normalizedTargetName;
     let targetId = "";
+    const isUpdatingExistingTarget = existingJob?.targetSpreadsheetName === targetName;
 
     // Reuse the existing job's target ID when matching target name.
     if (existingJob?.targetSpreadsheetName === targetName && existingJob.targetSpreadsheetId) {
@@ -150,29 +196,32 @@ export async function POST(req: NextRequest) {
     }
 
     if (!targetId) {
-      // Search for existing file by exact name
-      const searchRes = await drive.files.list({
-        q: `name = '${escapeDriveQueryValue(targetName)}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
-        fields: "files(id, name, modifiedTime)",
-        supportsAllDrives: true,
-        includeItemsFromAllDrives: true,
-        pageSize: 10,
-        orderBy: "modifiedTime desc",
-      });
+      targetId = await findSpreadsheetIdByName(drive, targetName) || "";
+    }
 
-      if (searchRes.data.files && searchRes.data.files.length > 0) {
-        targetId = searchRes.data.files[0].id!;
-      } else {
-        // Create new file only if no existing file matches
-        const createRes = await drive.files.create({
-          requestBody: {
-            name: targetName,
-            mimeType: "application/vnd.google-apps.spreadsheet",
+    if (!targetId) {
+      // Prevent accidental duplicate creation when replacing a deleted file for
+      // an existing job with the same target name. User likely needs re-consent
+      // so manually created files are visible to the app.
+      if (isUpdatingExistingTarget) {
+        return NextResponse.json(
+          {
+            error:
+              "Could not find an accessible existing spreadsheet with that name. Please sign out, sign in again, and retry so the app can detect manually created sheets.",
           },
-          fields: "id",
-        });
-        targetId = createRes.data.id!;
+          { status: 409 }
+        );
       }
+
+      // Create new file only when this is a genuinely new target name.
+      const createRes = await drive.files.create({
+        requestBody: {
+          name: targetName,
+          mimeType: "application/vnd.google-apps.spreadsheet",
+        },
+        fields: "id",
+      });
+      targetId = createRes.data.id!;
     }
 
     // 3. Create/Update Job
