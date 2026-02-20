@@ -4,6 +4,7 @@ import { SyncJobSchema } from "@/lib/validations";
 import { auth } from "@/lib/auth";
 import { getUserAuth } from "@/lib/google";
 import { google } from "googleapis";
+import { drive_v3 } from "googleapis";
 
 function extractSpreadsheetId(input: string): string {
   const match = input.match(/\/d\/([a-zA-Z0-9-_]+)/);
@@ -12,6 +13,34 @@ function extractSpreadsheetId(input: string): string {
 
 function escapeDriveQueryValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function isUsableSpreadsheetFile(drive: drive_v3.Drive, fileId: string): Promise<boolean> {
+  try {
+    const file = await drive.files.get({
+      fileId,
+      fields: "id,trashed,mimeType",
+      supportsAllDrives: true,
+    });
+
+    return (
+      Boolean(file.data.id) &&
+      !file.data.trashed &&
+      file.data.mimeType === "application/vnd.google-apps.spreadsheet"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isDrivePermissionError(error: any): boolean {
+  const status = error?.response?.status || error?.code;
+  const reason =
+    error?.response?.data?.error?.errors?.[0]?.reason ||
+    error?.response?.data?.error?.status ||
+    "";
+
+  return status === 403 || /insufficient|forbidden|permission/i.test(String(reason));
 }
 
 export async function GET(req: NextRequest) {
@@ -114,14 +143,21 @@ export async function POST(req: NextRequest) {
 
     // Reuse the existing job's target ID when matching target name.
     if (existingJob?.targetSpreadsheetName === targetName && existingJob.targetSpreadsheetId) {
-      targetId = existingJob.targetSpreadsheetId;
+      const fileStillExists = await isUsableSpreadsheetFile(drive, existingJob.targetSpreadsheetId);
+      if (fileStillExists) {
+        targetId = existingJob.targetSpreadsheetId;
+      }
     }
 
     if (!targetId) {
       // Search for existing file by exact name
       const searchRes = await drive.files.list({
         q: `name = '${escapeDriveQueryValue(targetName)}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
-        fields: "files(id, name)",
+        fields: "files(id, name, modifiedTime)",
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+        pageSize: 10,
+        orderBy: "modifiedTime desc",
       });
 
       if (searchRes.data.files && searchRes.data.files.length > 0) {
@@ -168,6 +204,17 @@ export async function POST(req: NextRequest) {
     if (error.name === "ZodError") {
       return NextResponse.json({ error: error.errors }, { status: 400 });
     }
+
+    if (isDrivePermissionError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Google Drive permissions changed. Please sign out, sign in again, and grant Drive access so manual spreadsheets can be detected.",
+        },
+        { status: 403 }
+      );
+    }
+
     console.error("Failed to create job:", error);
     return NextResponse.json(
       { error: "Failed to create job: " + (error.message || "") },

@@ -12,7 +12,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           prompt: "consent",
           access_type: "offline",
           response_type: "code",
-          scope: "openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets",
+          include_granted_scopes: "true",
+          // drive.metadata.readonly allows listing user-created files by name.
+          // drive.file keeps file-creation flow limited to app-created/opened files.
+          scope: "openid email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.metadata.readonly https://www.googleapis.com/auth/spreadsheets",
         },
       },
     }),
