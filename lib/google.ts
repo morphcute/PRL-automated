@@ -28,16 +28,42 @@ export const getUserAuth = async (userId: string) => {
     process.env.AUTH_GOOGLE_SECRET
   );
 
+  oauth2Client.on("tokens", async (tokens) => {
+    try {
+      await prisma.account.update({
+        where: {
+          provider_providerAccountId: {
+            provider: "google",
+            providerAccountId: account.providerAccountId,
+          },
+        },
+        data: {
+          access_token: tokens.access_token ?? account.access_token,
+          refresh_token: tokens.refresh_token ?? account.refresh_token,
+          expires_at: tokens.expiry_date ? Math.floor(tokens.expiry_date / 1000) : account.expires_at,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to persist refreshed Google tokens:", error);
+    }
+  });
+
   oauth2Client.setCredentials({
     access_token: account.access_token,
     refresh_token: account.refresh_token,
     expiry_date: account.expires_at ? account.expires_at * 1000 : undefined,
   });
-  
-  // Refresh token logic is handled by googleapis automatically if refresh_token is present?
-  // Yes, but we might want to update the DB with new tokens. 
-  // For simplicity, we trust googleapis to refresh in-memory for the operation.
-  // Ideally we should listen to 'tokens' event and update DB, but for now let's rely on valid refresh token.
+
+  // Validate/refresh access token now so revoked sessions fail early with a clear error.
+  try {
+    await oauth2Client.getAccessToken();
+  } catch (error: any) {
+    const reason = error?.response?.data?.error || error?.message || "";
+    if (/invalid_grant/i.test(String(reason))) {
+      throw new Error("Google authorization expired or revoked. Please sign out and sign in again.");
+    }
+    throw error;
+  }
 
   return oauth2Client;
 };

@@ -88,6 +88,12 @@ function isDrivePermissionError(error: any): boolean {
   return status === 403 || /insufficient|forbidden|permission/i.test(String(reason));
 }
 
+function isInvalidGrantError(error: any): boolean {
+  const message = error?.message || "";
+  const oauthError = error?.response?.data?.error || "";
+  return /invalid_grant/i.test(String(message)) || /invalid_grant/i.test(String(oauthError));
+}
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -252,6 +258,16 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     if (error.name === "ZodError") {
       return NextResponse.json({ error: error.errors }, { status: 400 });
+    }
+
+    if (isInvalidGrantError(error)) {
+      return NextResponse.json(
+        {
+          error:
+            "Google authorization expired or revoked. Please sign out, sign in again, and grant Google Drive access.",
+        },
+        { status: 401 }
+      );
     }
 
     if (isDrivePermissionError(error)) {
