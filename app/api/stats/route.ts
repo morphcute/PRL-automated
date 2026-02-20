@@ -1,57 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-const CACHE_TTL_MS = 60_000;
-
-type StatsPayload = {
-  totalJobs: number;
-  totalSuccessfulRuns: number;
-  totalUsers: number;
-  pageViews: number;
-};
-
-let statsCache: { expiresAt: number; payload: StatsPayload } | null = null;
-
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
-    const now = Date.now();
-    if (statsCache && statsCache.expiresAt > now) {
-      return NextResponse.json(statsCache.payload, {
-        headers: {
-          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
-        },
-      });
-    }
+    // Get total jobs count
+    const totalJobs = await prisma.syncJob.count();
+    
+    // Get total successful runs count
+    const totalSuccessfulRuns = await prisma.syncRun.count({
+      where: { status: "success" }
+    });
+    
+    // Get total users count
+    const totalUsers = await prisma.user.count();
+    
+    // Get total page views from all pages
+    const pageViewResult = await prisma.pageView.aggregate({
+      _sum: {
+        count: true
+      }
+    });
+    
+    const totalPageViews = pageViewResult._sum.count || 0;
 
-    const [totalJobs, totalSuccessfulRuns, totalUsers, pageViewResult] = await Promise.all([
-      prisma.syncJob.count(),
-      prisma.syncRun.count({
-        where: { status: "success" },
-      }),
-      prisma.user.count(),
-      prisma.pageView.aggregate({
-        _sum: {
-          count: true,
-        },
-      }),
-    ]);
-
-    const payload: StatsPayload = {
+    return NextResponse.json({
       totalJobs,
       totalSuccessfulRuns,
       totalUsers,
-      pageViews: pageViewResult._sum.count || 0,
-    };
-
-    statsCache = {
-      payload,
-      expiresAt: now + CACHE_TTL_MS,
-    };
-
-    return NextResponse.json(payload, {
-      headers: {
-        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
-      },
+      pageViews: totalPageViews,
     });
   } catch (error: any) {
     console.error("Failed to fetch stats:", error);
