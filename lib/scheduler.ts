@@ -5,6 +5,20 @@ type RunDueJobsOptions = {
   userId?: string;
 };
 
+function getSyncErrorMessage(error: any): string {
+  if (typeof error?.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+  const apiMessage = error?.response?.data?.error?.message;
+  if (typeof apiMessage === "string" && apiMessage.trim()) {
+    return apiMessage;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return "Sync failed";
+}
+
 export async function runDueJobs(options: RunDueJobsOptions = {}) {
   const now = new Date();
 
@@ -116,17 +130,18 @@ export async function runDueJobs(options: RunDueJobsOptions = {}) {
       result = await syncPreRegisteredList(job);
     } catch (error: any) {
       console.error(`Job ${job.id} failed during sync:`, error);
+      const errorMessage = getSyncErrorMessage(error);
 
       await prisma.syncRun.update({
         where: { id: runRecord.id },
         data: {
           status: "failed",
           completedAt: new Date(),
-          progressMessage: error?.message || "Sync failed",
+          progressMessage: errorMessage,
         },
       });
 
-      results.push({ jobId: job.id, status: "failed", error: error.message });
+      results.push({ jobId: job.id, status: "failed", error: errorMessage });
       continue;
     }
 

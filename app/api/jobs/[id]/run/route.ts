@@ -2,6 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncPreRegisteredList } from "@/lib/sync";
 
+function getSyncErrorMessage(error: any): string {
+  if (typeof error?.message === "string" && error.message.trim()) {
+    return error.message;
+  }
+  const apiMessage = error?.response?.data?.error?.message;
+  if (typeof apiMessage === "string" && apiMessage.trim()) {
+    return apiMessage;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error;
+  }
+  return "Sync failed";
+}
+
 export async function POST(
   req: NextRequest,
   props: { params: Promise<{ id: string }> }
@@ -39,6 +53,7 @@ export async function POST(
       result = await syncPreRegisteredList(job, runRecord.id);
     } catch (error: any) {
       console.error(`Manual run for job ${job.id} failed during sync:`, error);
+      const errorMessage = getSyncErrorMessage(error);
       
       // Sync itself failed, mark run as failed.
       await prisma.syncRun.update({
@@ -46,7 +61,7 @@ export async function POST(
         data: {
           completedAt: new Date(),
           status: "failed",
-          progressMessage: error?.message || "Sync failed",
+          progressMessage: errorMessage,
         },
       });
       return;

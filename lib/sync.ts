@@ -35,6 +35,36 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
   // Connect to Google Sheets with User Auth
   const authClient = await getUserAuth(job.userId);
   const sheets = google.sheets({ version: "v4", auth: authClient });
+  const normalizeHeaderCell = (value: unknown) =>
+    String(value ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+
+  const hasExpectedTemplateHeader = async (
+    spreadsheetId: string,
+    tabName: string,
+    includeStatus: boolean
+  ): Promise<boolean> => {
+    try {
+      const headerRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `'${tabName}'!A1:F1`,
+      });
+      const headerRow = headerRes.data.values?.[0] || [];
+      const expectedHeaders = includeStatus
+        ? ["No.", "Players Name", "Players IGN", "# Server", "# UID", "Status"]
+        : ["No.", "Players Name", "Players IGN", "# Server", "# UID"];
+
+      return expectedHeaders.every(
+        (header, index) =>
+          normalizeHeaderCell(headerRow[index]) === normalizeHeaderCell(header)
+      );
+    } catch (error) {
+      console.error("Failed to inspect existing target sheet header:", error);
+      return false;
+    }
+  };
 
   try {
     // 1. Read Source (Responses Sheet)
@@ -213,15 +243,16 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
        // We need to bypass the standard loop below.
        
        // ... existing sheet creation/clearing logic ...
-       const targetId = job.targetSpreadsheetId;
-       const TAB_NAME = job.sheetName || "Pre Registered List";
-       let targetSheetId: number | null = null;
-       let reusedExistingTab = false;
+        const targetId = job.targetSpreadsheetId;
+        const TAB_NAME = job.sheetName || "Pre Registered List";
+        let targetSheetId: number | null = null;
+        let reusedExistingTab = false;
+        let existingTabHasTemplate = false;
 
        const targetSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId: targetId });
        let targetSheet = targetSpreadsheet.data.sheets?.find(s => s.properties?.title === TAB_NAME);
        
-       // Sheet1 renaming logic (reused)
+       // If TAB_NAME does not exist yet, renaming Sheet1 is treated as creating a new layout tab.
        if (!targetSheet) {
           const sheet1 = targetSpreadsheet.data.sheets?.find(s => s.properties?.title === "Sheet1");
           if (sheet1) {
@@ -235,13 +266,14 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
                       }
                    }]
                 }
-             });
-             targetSheetId = sheet1.properties?.sheetId || 0;
-             reusedExistingTab = true;
+              });
+              targetSheetId = sheet1.properties?.sheetId || 0;
+              reusedExistingTab = false;
           }
        } else {
           targetSheetId = targetSheet.properties?.sheetId || 0;
           reusedExistingTab = true;
+          existingTabHasTemplate = await hasExpectedTemplateHeader(targetId, TAB_NAME, true);
        }
        
        if (targetSheetId === null && !targetSheet) {
@@ -252,31 +284,37 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
           targetSheetId = createResp.data.replies?.[0].addSheet?.properties?.sheetId || 0;
        }
        
-        // Write Verifier Data
-        if (targetSheetId !== null) {
-          const valuesToWrite = reusedExistingTab ? verifierRows.slice(1) : verifierRows;
-          const startCell = reusedExistingTab ? "A2" : "A1";
+       const preserveExistingLayout = reusedExistingTab && existingTabHasTemplate;
+
+       // Write Verifier Data
+       if (targetSheetId !== null) {
+          const valuesToWrite = preserveExistingLayout
+             ? verifierRows.slice(1).map((row) => row.slice(1))
+             : verifierRows;
+          const writeStartColumn = preserveExistingLayout ? "B" : "A";
+          const writeStartRow = preserveExistingLayout ? 2 : 1;
+          const writeRange = `'${TAB_NAME}'!${writeStartColumn}${writeStartRow}:F`;
 
           // Keep manual template content intact for reused tabs.
-          if (!reusedExistingTab) {
+          if (!preserveExistingLayout) {
              await sheets.spreadsheets.values.clear({ spreadsheetId: targetId, range: `'${TAB_NAME}'!A:F` });
           }
           if (valuesToWrite.length > 0) {
              await sheets.spreadsheets.values.update({
                 spreadsheetId: targetId,
-                range: `'${TAB_NAME}'!${startCell}`,
+                range: writeRange,
                 valueInputOption: "USER_ENTERED",
                 requestBody: { values: valuesToWrite },
              });
           }
           
           // Apply Formatting for Verifier
-          if (!reusedExistingTab) {
+          if (!preserveExistingLayout) {
              const requests: any[] = [];
              // Header
              requests.push({
                 repeatCell: {
-                   range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 4 },
+                   range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 6 },
                    cell: { userEnteredFormat: { backgroundColor: { red: 0.1, green: 0.3, blue: 0.2 }, textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true } } },
                    fields: "userEnteredFormat(backgroundColor,textFormat)"
                 }
@@ -285,7 +323,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
              requests.push({
                 addConditionalFormatRule: {
                    rule: {
-                      ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 3, endColumnIndex: 4 }],
+                      ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
                       booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] }, format: { backgroundColor: { red: 0.8, green: 1, blue: 0.8 } } }
                    }, index: 0
                 }
@@ -293,13 +331,18 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
              requests.push({
                 addConditionalFormatRule: {
                    rule: {
-                      ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 3, endColumnIndex: 4 }],
+                      ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
                       booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] }, format: { backgroundColor: { red: 1, green: 0.8, blue: 0.8 } } }
                    }, index: 1
                 }
              });
              
-             await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
+             try {
+               await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
+             } catch (formatError) {
+               // Formatting should not flip the run to failed after data is already written.
+               console.error("Non-fatal verifier formatting error:", formatError);
+             }
           }
        }
        
@@ -489,6 +532,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     const TAB_NAME = job.sheetName || "Pre Registered List";
     let targetSheetId: number | null = null;
     let reusedExistingTab = false;
+    let existingTabHasTemplate = false;
     
     // Check if target tab exists in target spreadsheet
     const targetSpreadsheet = await sheets.spreadsheets.get({
@@ -500,7 +544,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
       (s) => s.properties?.title === TAB_NAME
     );
 
-    // Special Handling: If "Sheet1" exists and it's the only sheet (or we want to reuse it), rename it to TAB_NAME
+    // If TAB_NAME does not exist yet, renaming Sheet1 is treated as creating a new layout tab.
     if (!targetSheet) {
        const sheet1 = targetSpreadsheet.data.sheets?.find(
           (s) => s.properties?.title === "Sheet1"
@@ -521,35 +565,41 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
                    }
                 }]
              }
-          });
-          targetSheetId = sheet1.properties?.sheetId || 0;
-          reusedExistingTab = true;
-          console.log(`Renamed 'Sheet1' to '${TAB_NAME}'`);
-       }
+           });
+           targetSheetId = sheet1.properties?.sheetId || 0;
+           reusedExistingTab = false;
+           console.log(`Renamed 'Sheet1' to '${TAB_NAME}'`);
+        }
     } else {
        targetSheetId = targetSheet.properties?.sheetId || 0;
        reusedExistingTab = true;
+       existingTabHasTemplate = await hasExpectedTemplateHeader(targetId, TAB_NAME, job.validationEnabled);
     }
 
     const outputEndColumn = job.validationEnabled ? "F" : "E";
+    const preserveExistingLayout = reusedExistingTab && existingTabHasTemplate;
 
     if (targetSheetId !== null) {
       // Keep manual template content intact for reused tabs.
-      if (!reusedExistingTab) {
+      if (!preserveExistingLayout) {
         await sheets.spreadsheets.values.clear({
           spreadsheetId: targetId,
           range: `'${TAB_NAME}'!A:${outputEndColumn}`,
         });
       }
       
-      const valuesToWrite = reusedExistingTab ? rows.slice(1) : rows;
-      const startCell = reusedExistingTab ? "A2" : "A1";
+      const valuesToWrite = preserveExistingLayout
+        ? rows.slice(1).map((row) => row.slice(1))
+        : rows;
+      const writeStartColumn = preserveExistingLayout ? "B" : "A";
+      const writeStartRow = preserveExistingLayout ? 2 : 1;
+      const writeRange = `'${TAB_NAME}'!${writeStartColumn}${writeStartRow}:${outputEndColumn}`;
 
       // Write new data
       if (valuesToWrite.length > 0) {
         await sheets.spreadsheets.values.update({
           spreadsheetId: targetId,
-          range: `'${TAB_NAME}'!${startCell}`,
+          range: writeRange,
           valueInputOption: "USER_ENTERED",
           requestBody: { values: valuesToWrite },
         });
@@ -579,7 +629,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
       if (rows.length > 0) {
         await sheets.spreadsheets.values.update({
           spreadsheetId: targetId,
-          range: `'${TAB_NAME}'!A1`,
+          range: `'${TAB_NAME}'!A1:${outputEndColumn}`,
           valueInputOption: "USER_ENTERED",
           requestBody: { values: rows },
         });
@@ -588,7 +638,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     }
 
     // 3. Apply Formatting (Borders, Colors, Merging)
-    if (targetSheetId !== null && rows.length > 0 && !reusedExistingTab) {
+    if (targetSheetId !== null && rows.length > 0 && !preserveExistingLayout) {
         await updateProgress(95, "Applying formatting...");
         const requests: any[] = [];
 
@@ -764,10 +814,15 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
             }
         });
 
-        await sheets.spreadsheets.batchUpdate({
-            spreadsheetId: targetId,
-            requestBody: { requests }
-        });
+        try {
+          await sheets.spreadsheets.batchUpdate({
+              spreadsheetId: targetId,
+              requestBody: { requests }
+          });
+        } catch (formatError) {
+          // Formatting should not flip the run to failed after data is already written.
+          console.error("Non-fatal formatting error:", formatError);
+        }
     }
 
     return {
