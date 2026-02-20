@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
+import { isStaticExportBuild } from "@/lib/static-mode";
 
 interface Stats {
   totalJobs: number;
@@ -11,6 +11,7 @@ interface Stats {
 }
 
 export default function HomePageClient() {
+  const staticMode = isStaticExportBuild;
   const [stats, setStats] = useState<Stats>({
     totalJobs: 2341,
     totalSuccessfulRuns: 8543,
@@ -20,6 +21,11 @@ export default function HomePageClient() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (staticMode) {
+      setLoading(false);
+      return;
+    }
+
     const fetchStats = async () => {
       try {
         const res = await fetch("/api/stats");
@@ -35,7 +41,7 @@ export default function HomePageClient() {
     };
 
     fetchStats();
-  }, []);
+  }, [staticMode]);
 
   return (
     <>

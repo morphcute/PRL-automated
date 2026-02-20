@@ -1,14 +1,19 @@
 import Link from "next/link";
-import { auth } from "@/lib/auth";
 import HomePageClient from "@/components/HomePageClient";
 import PageViewTracker from "@/components/PageViewTracker";
+import { isStaticExportBuild } from "@/lib/static-mode";
 
 export default async function HomePage() {
-  const session = await auth();
+  let session: { user?: unknown } | null = null;
+
+  if (!isStaticExportBuild) {
+    const { auth } = await import("@/lib/auth");
+    session = await auth();
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
-      <PageViewTracker page="home" />
+      {!isStaticExportBuild && <PageViewTracker page="home" />}
       {/* Navigation */}
       <header className="px-6 py-4 flex justify-between items-center border-b border-white/10 bg-black/20 backdrop-blur-md sticky top-0 z-50">
         <div className="flex items-center gap-2">

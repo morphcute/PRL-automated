@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { isStaticExportBuild } from "@/lib/static-mode";
 
 interface PageViewTrackerProps {
   page: string;
@@ -8,6 +9,10 @@ interface PageViewTrackerProps {
 
 export default function PageViewTracker({ page }: PageViewTrackerProps) {
   useEffect(() => {
+    if (isStaticExportBuild) {
+      return;
+    }
+
     const dateKey = new Date().toISOString().slice(0, 10);
     const storageKey = `pv:${page}:${dateKey}`;
 
