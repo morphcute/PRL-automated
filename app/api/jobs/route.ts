@@ -10,6 +10,10 @@ function extractSpreadsheetId(input: string): string {
   return match ? match[1] : input;
 }
 
+function escapeDriveQueryValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -66,39 +70,79 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid endAt value" }, { status: 400 });
     }
 
+    const normalizedJobName = validatedData.name.trim();
+    const normalizedTargetName = validatedData.targetSpreadsheetName.trim();
+
+    if (!normalizedJobName) {
+      return NextResponse.json({ error: "Job name is required" }, { status: 400 });
+    }
+
+    if (!normalizedTargetName) {
+      return NextResponse.json({ error: "Target sheet name is required" }, { status: 400 });
+    }
+
     // 1. Resolve Source ID
     const sourceId = extractSpreadsheetId(validatedData.spreadsheetId);
+
+    // If a job with same target sheet name or same job name already exists
+    // for this user, update it instead of creating a duplicate job.
+    // Prioritize target sheet name match so we always push to the intended file.
+    const existingByTarget = await prisma.syncJob.findFirst({
+      where: {
+        userId: session.user.id,
+        targetSpreadsheetName: normalizedTargetName,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const existingJob =
+      existingByTarget ||
+      (await prisma.syncJob.findFirst({
+        where: {
+          userId: session.user.id,
+          name: normalizedJobName,
+        },
+        orderBy: { createdAt: "desc" },
+      }));
 
     // 2. Resolve Target ID (Check Drive)
     const authClient = await getUserAuth(session.user.id);
     const drive = google.drive({ version: "v3", auth: authClient });
     
-    const targetName = validatedData.targetSpreadsheetName;
+    const targetName = normalizedTargetName;
     let targetId = "";
 
-    // Search for existing file
-    const searchRes = await drive.files.list({
-      q: `name = '${targetName}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
-      fields: "files(id, name)",
-    });
-
-    if (searchRes.data.files && searchRes.data.files.length > 0) {
-      targetId = searchRes.data.files[0].id!;
-    } else {
-      // Create new file
-      const createRes = await drive.files.create({
-        requestBody: {
-          name: targetName,
-          mimeType: "application/vnd.google-apps.spreadsheet",
-        },
-        fields: "id",
-      });
-      targetId = createRes.data.id!;
+    // Reuse the existing job's target ID when matching target name.
+    if (existingJob?.targetSpreadsheetName === targetName && existingJob.targetSpreadsheetId) {
+      targetId = existingJob.targetSpreadsheetId;
     }
 
-    // 3. Create Job
+    if (!targetId) {
+      // Search for existing file by exact name
+      const searchRes = await drive.files.list({
+        q: `name = '${escapeDriveQueryValue(targetName)}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
+        fields: "files(id, name)",
+      });
+
+      if (searchRes.data.files && searchRes.data.files.length > 0) {
+        targetId = searchRes.data.files[0].id!;
+      } else {
+        // Create new file only if no existing file matches
+        const createRes = await drive.files.create({
+          requestBody: {
+            name: targetName,
+            mimeType: "application/vnd.google-apps.spreadsheet",
+          },
+          fields: "id",
+        });
+        targetId = createRes.data.id!;
+      }
+    }
+
+    // 3. Create/Update Job
     const jobData = {
       ...validatedData,
+      name: normalizedJobName,
       spreadsheetId: sourceId, // Normalized ID
       targetSpreadsheetId: targetId,
       targetSpreadsheetName: targetName,
@@ -106,6 +150,14 @@ export async function POST(req: NextRequest) {
       startAt: parsedStartAt,
       endAt: parsedEndAt,
     };
+
+    if (existingJob) {
+      const job = await prisma.syncJob.update({
+        where: { id: existingJob.id },
+        data: jobData,
+      });
+      return NextResponse.json({ ...job, reusedExistingJob: true });
+    }
 
     const job = await prisma.syncJob.create({
       data: jobData,
