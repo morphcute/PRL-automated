@@ -105,6 +105,13 @@ model SyncJob {
 
   // Scheduling
   runs            SyncRun[]
+
+  @@index([userId])
+  @@index([name, userId])
+  @@index([isEnabled, cronEnabled, runMode])
+  @@index([startAt])
+  @@index([endAt])
+  @@index([lastRunAt])
 }
 
 model SyncRun {
@@ -117,6 +124,11 @@ model SyncRun {
   progress    Int      @default(0)
   progressMessage String? // "Checking 5/50", "Syncing...", etc.
   rowsWritten Int      @default(0)
+
+  @@index([jobId])
+  @@index([jobId, startedAt])
+  @@index([jobId, status])
+  @@index([status, startedAt])
 }
 
 model PageView {

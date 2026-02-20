@@ -46,6 +46,25 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const validatedData = SyncJobSchema.parse(body);
+    const isAutoMode = validatedData.runMode === "scheduled" || validatedData.runMode === "both";
+
+    if (isAutoMode && !validatedData.startAt) {
+      return NextResponse.json(
+        { error: "Start date/time is required for auto-pilot jobs" },
+        { status: 400 }
+      );
+    }
+
+    const parsedStartAt = validatedData.startAt ? new Date(validatedData.startAt) : null;
+    const parsedEndAt = validatedData.endAt ? new Date(validatedData.endAt) : null;
+
+    if (parsedStartAt && Number.isNaN(parsedStartAt.getTime())) {
+      return NextResponse.json({ error: "Invalid startAt value" }, { status: 400 });
+    }
+
+    if (parsedEndAt && Number.isNaN(parsedEndAt.getTime())) {
+      return NextResponse.json({ error: "Invalid endAt value" }, { status: 400 });
+    }
 
     // 1. Resolve Source ID
     const sourceId = extractSpreadsheetId(validatedData.spreadsheetId);
@@ -84,8 +103,8 @@ export async function POST(req: NextRequest) {
       targetSpreadsheetId: targetId,
       targetSpreadsheetName: targetName,
       userId: session.user.id,
-      startAt: validatedData.startAt ? new Date(validatedData.startAt) : null,
-      endAt: validatedData.endAt ? new Date(validatedData.endAt) : null,
+      startAt: parsedStartAt,
+      endAt: parsedEndAt,
     };
 
     const job = await prisma.syncJob.create({

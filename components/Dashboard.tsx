@@ -59,6 +59,8 @@ export default function Dashboard() {
   // Background Scheduler & Polling
   useEffect(() => {
     const checkSchedule = async () => {
+      if (document.visibilityState !== "visible") return;
+
       try {
         const res = await fetch("/api/jobs/check", { method: "POST" });
         if (res.ok) {
@@ -70,8 +72,8 @@ export default function Dashboard() {
       }
     };
 
-    const scheduleInterval = setInterval(checkSchedule, 60000);
-    const scheduleTimeout = setTimeout(checkSchedule, 5000);
+    const scheduleInterval = setInterval(checkSchedule, 300000); // every 5 minutes
+    const scheduleTimeout = setTimeout(checkSchedule, 15000);
 
     const pollProgress = () => {
        const hasRunning = jobs.some(j => j.runs && j.runs[0]?.status === "running");

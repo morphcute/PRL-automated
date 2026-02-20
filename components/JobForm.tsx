@@ -197,12 +197,14 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
 
           {(runMode === "both" || runMode === "scheduled") && (
             <div className="pt-4 animate-in fade-in slide-in-from-top-2">
-              <label className="text-sm font-medium text-white mb-2 block">Start Date & Time</label>
+              <label className="text-sm font-medium text-white mb-2 block">Start Date & Time *</label>
               <input 
                 type="datetime-local" 
                 {...form.register("startAt")} 
+                required={runMode === "both" || runMode === "scheduled"}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500/50 outline-none" 
               />
+              <p className="text-xs text-muted-foreground mt-2">Auto-pilot runs at/after this time and one-time jobs run only once automatically.</p>
             </div>
           )}
         </div>

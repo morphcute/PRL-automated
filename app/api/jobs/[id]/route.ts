@@ -34,10 +34,32 @@ export async function PATCH(
   try {
     const body = await req.json();
     const validatedData = SyncJobSchema.partial().parse(body);
+    const runMode = validatedData.runMode;
+
+    if ((runMode === "scheduled" || runMode === "both") && !validatedData.startAt) {
+      return NextResponse.json(
+        { error: "Start date/time is required when enabling auto-pilot mode" },
+        { status: 400 }
+      );
+    }
 
     const updateData: any = { ...validatedData };
-    if (validatedData.startAt) updateData.startAt = new Date(validatedData.startAt);
-    if (validatedData.endAt) updateData.endAt = new Date(validatedData.endAt);
+
+    if (validatedData.startAt) {
+      const parsedStartAt = new Date(validatedData.startAt);
+      if (Number.isNaN(parsedStartAt.getTime())) {
+        return NextResponse.json({ error: "Invalid startAt value" }, { status: 400 });
+      }
+      updateData.startAt = parsedStartAt;
+    }
+
+    if (validatedData.endAt) {
+      const parsedEndAt = new Date(validatedData.endAt);
+      if (Number.isNaN(parsedEndAt.getTime())) {
+        return NextResponse.json({ error: "Invalid endAt value" }, { status: 400 });
+      }
+      updateData.endAt = parsedEndAt;
+    }
 
     const job = await prisma.syncJob.update({
       where: { id: params.id },

@@ -1,55 +1,76 @@
 import { prisma } from "@/lib/prisma";
 import { syncPreRegisteredList } from "@/lib/sync";
 
-export async function runDueJobs() {
+type RunDueJobsOptions = {
+  userId?: string;
+};
+
+export async function runDueJobs(options: RunDueJobsOptions = {}) {
   const now = new Date();
 
-  // 1. Query candidate jobs
-  // Query jobs with:
-  // isEnabled = true
-  // AND (runMode == "scheduled" OR runMode == "both")
-  // AND cronEnabled == true
   const jobs = await prisma.syncJob.findMany({
     where: {
       isEnabled: true,
       cronEnabled: true,
       runMode: { in: ["scheduled", "both"] },
+      ...(options.userId ? { userId: options.userId } : {}),
     },
   });
 
-  const results = [];
+  if (jobs.length === 0) {
+    return { success: true, processed: 0, results: [] };
+  }
+
+  const results: any[] = [];
 
   for (const job of jobs) {
-    // 2. Schedule Checks
-    
-    // if startAt exists and now < startAt -> skip (job hasn't started yet)
-    // Allow jobs to run even if they missed their exact start time by up to 24 hours
+    if (!job.startAt) {
+      await prisma.syncJob.update({
+        where: { id: job.id },
+        data: { cronEnabled: false },
+      });
+      results.push({ jobId: job.id, status: "skipped", reason: "Auto-pilot disabled: missing startAt" });
+      continue;
+    }
+
+    // Skip if the job hasn't reached its start time yet.
     if (job.startAt && now < job.startAt) {
       continue;
     }
-    
-    // If startAt is more than 24 hours in the past, consider it as "missed but still runnable"
-    // This handles the case where a job was scheduled for 12:31 AM but now it's 12:34 AM (or later)
 
-    // if endAt exists and now > endAt -> set isEnabled=false and skip
+    // Disable expired jobs once and skip them.
     if (job.endAt && now > job.endAt) {
-      // Disable the job
       await prisma.syncJob.update({
         where: { id: job.id },
-        data: { isEnabled: false },
+        data: { isEnabled: false, cronEnabled: false },
       });
       results.push({ jobId: job.id, status: "skipped", reason: "Job expired (endAt passed), disabled" });
       continue;
     }
 
-    // intervalMinutes: if lastRunAt exists and (now-lastRunAt) < intervalMinutes -> skip
-    if (job.intervalMinutes && job.lastRunAt) {
+    const isOneTimeAutoPilot = !job.intervalMinutes;
+
+    // One-time auto jobs should run only once automatically.
+    if (isOneTimeAutoPilot && job.lastRunAt) {
+      if (job.cronEnabled) {
+        await prisma.syncJob.update({
+          where: { id: job.id },
+          data: { cronEnabled: false },
+        });
+      }
+      results.push({ jobId: job.id, status: "skipped", reason: "One-time job already attempted" });
+      continue;
+    }
+
+    // For recurring jobs, skip if interval has not elapsed yet.
+    if (!isOneTimeAutoPilot && job.intervalMinutes && job.lastRunAt) {
       const nextRun = new Date(job.lastRunAt.getTime() + job.intervalMinutes * 60000);
       if (now < nextRun) {
         continue;
       }
     }
 
+    // Re-check running status just before launch to avoid overlap.
     const existingRun = await prisma.syncRun.findFirst({
       where: { jobId: job.id, status: "running" },
       select: { id: true },
@@ -58,47 +79,24 @@ export async function runDueJobs() {
       continue;
     }
 
-    // Check if this job name has already been run successfully today
-    // This ensures auto-pilot runs once per job name, not per job ID
-    const isOneTimeAutoPilot = !job.intervalMinutes;
-    if (isOneTimeAutoPilot) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const existingSuccessfulRun = await prisma.syncRun.findFirst({
-        where: {
-          job: {
-            name: job.name, // Same job name
-            userId: job.userId, // Same user
-          },
-          status: "success",
-          startedAt: {
-            gte: today,
-            lt: tomorrow,
-          },
-        },
-      });
-
-      if (existingSuccessfulRun) {
-        // Skip this job but don't disable it - another job with the same name already ran successfully today
-        results.push({ jobId: job.id, status: "skipped", reason: "Job name already processed today" });
-        continue;
-      }
-    }
-
-    await prisma.syncJob.update({
-      where: { id: job.id },
+    // Claim this execution slot. If another scheduler call already claimed it,
+    // skip this job to prevent duplicate runs.
+    const claim = await prisma.syncJob.updateMany({
+      where: {
+        id: job.id,
+        lastRunAt: job.lastRunAt,
+        ...(isOneTimeAutoPilot ? { cronEnabled: true } : {}),
+      },
       data: {
         lastRunAt: now,
-        // Only disable cron if this specific job ran successfully
-        // Don't disable based on job name - let other jobs with same name try to run
+        ...(isOneTimeAutoPilot ? { cronEnabled: false } : {}),
       },
     });
 
-    // 3. Run Sync for eligible jobs
-    // Create SyncRun record
+    if (claim.count === 0) {
+      continue;
+    }
+
     const runRecord = await prisma.syncRun.create({
       data: {
         jobId: job.id,
@@ -109,8 +107,7 @@ export async function runDueJobs() {
 
     try {
       const result = await syncPreRegisteredList(job);
-      
-      // Update SyncRun (success)
+
       await prisma.syncRun.update({
         where: { id: runRecord.id },
         data: {
@@ -120,19 +117,10 @@ export async function runDueJobs() {
         },
       });
 
-      // Only disable this specific job after successful completion
-      if (isOneTimeAutoPilot) {
-        await prisma.syncJob.update({
-          where: { id: job.id },
-          data: { cronEnabled: false },
-        });
-      }
-
       results.push({ jobId: job.id, status: "success", rows: result.rowsWritten });
     } catch (error: any) {
       console.error(`Job ${job.id} failed:`, error);
-      
-      // Update SyncRun (failed)
+
       await prisma.syncRun.update({
         where: { id: runRecord.id },
         data: {
