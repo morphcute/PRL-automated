@@ -50,16 +50,21 @@ export async function runDueJobs(options: RunDueJobsOptions = {}) {
 
     const isOneTimeAutoPilot = !job.intervalMinutes;
 
-    // One-time auto jobs should run only once automatically.
+    // One-time auto jobs should run once per configured schedule window.
+    // If startAt was moved forward after a previous run, allow one more run.
     if (isOneTimeAutoPilot && job.lastRunAt) {
-      if (job.cronEnabled) {
+      const hasRunForCurrentSchedule = !job.startAt || job.lastRunAt >= job.startAt;
+      if (hasRunForCurrentSchedule && job.cronEnabled) {
         await prisma.syncJob.update({
           where: { id: job.id },
           data: { cronEnabled: false },
         });
       }
-      results.push({ jobId: job.id, status: "skipped", reason: "One-time job already attempted" });
-      continue;
+
+      if (hasRunForCurrentSchedule) {
+        results.push({ jobId: job.id, status: "skipped", reason: "One-time job already attempted" });
+        continue;
+      }
     }
 
     // For recurring jobs, skip if interval has not elapsed yet.
@@ -105,9 +110,27 @@ export async function runDueJobs(options: RunDueJobsOptions = {}) {
       },
     });
 
-    try {
-      const result = await syncPreRegisteredList(job);
+    let result: { rowsWritten: number; success: boolean } | null = null;
 
+    try {
+      result = await syncPreRegisteredList(job);
+    } catch (error: any) {
+      console.error(`Job ${job.id} failed during sync:`, error);
+
+      await prisma.syncRun.update({
+        where: { id: runRecord.id },
+        data: {
+          status: "failed",
+          completedAt: new Date(),
+          progressMessage: error?.message || "Sync failed",
+        },
+      });
+
+      results.push({ jobId: job.id, status: "failed", error: error.message });
+      continue;
+    }
+
+    try {
       await prisma.syncRun.update({
         where: { id: runRecord.id },
         data: {
@@ -116,21 +139,11 @@ export async function runDueJobs(options: RunDueJobsOptions = {}) {
           rowsWritten: result.rowsWritten,
         },
       });
-
-      results.push({ jobId: job.id, status: "success", rows: result.rowsWritten });
     } catch (error: any) {
-      console.error(`Job ${job.id} failed:`, error);
-
-      await prisma.syncRun.update({
-        where: { id: runRecord.id },
-        data: {
-          status: "failed",
-          completedAt: new Date(),
-        },
-      });
-      
-      results.push({ jobId: job.id, status: "failed", error: error.message });
+      console.error(`Job ${job.id} completed but failed to update run status:`, error);
     }
+
+    results.push({ jobId: job.id, status: "success", rows: result.rowsWritten });
   }
 
   return { success: true, processed: jobs.length, results };

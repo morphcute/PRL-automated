@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { SyncJob, SyncRun } from "@prisma/client";
 import { signOut } from "next-auth/react";
 import Modal from "./Modal";
@@ -37,9 +37,22 @@ export default function Dashboard() {
     setInfoModalOpen(true);
   };
 
-  const fetchJobs = async () => {
+  const getDisplayStatus = (job: JobWithRuns): SyncRun["status"] | undefined => {
+    const latestStatus = job.runs?.[0]?.status;
+    if (latestStatus === "running") return "running";
+    if (!job.lastRunAt) return undefined;
+    return latestStatus;
+  };
+
+  const formatLastRunAt = (lastRunAt: string | Date | null) => {
+    if (!lastRunAt) return "Never run";
+    const value = new Date(lastRunAt);
+    return Number.isNaN(value.getTime()) ? "Never run" : value.toLocaleString();
+  };
+
+  const fetchJobs = useCallback(async () => {
     try {
-      const res = await fetch("/api/jobs");
+      const res = await fetch("/api/jobs", { cache: "no-store" });
       if (res.status === 401) return;
       if (res.ok) {
         const data = await res.json();
@@ -50,19 +63,19 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchJobs();
-  }, []);
+  }, [fetchJobs]);
 
-  // Background Scheduler & Polling
+  // Background scheduler heartbeat
   useEffect(() => {
     const checkSchedule = async () => {
       if (document.visibilityState !== "visible") return;
 
       try {
-        const res = await fetch("/api/jobs/check", { method: "POST" });
+        const res = await fetch("/api/jobs/check", { method: "POST", cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           if (data.results && data.results.length > 0) fetchJobs();
@@ -75,18 +88,36 @@ export default function Dashboard() {
     const scheduleInterval = setInterval(checkSchedule, 300000); // every 5 minutes
     const scheduleTimeout = setTimeout(checkSchedule, 15000);
 
-    const pollProgress = () => {
-       const hasRunning = jobs.some(j => j.runs && j.runs[0]?.status === "running");
-       if (hasRunning) fetchJobs();
-    };
-    const progressInterval = setInterval(pollProgress, 2000);
-
     return () => {
       clearInterval(scheduleInterval);
       clearTimeout(scheduleTimeout);
-      clearInterval(progressInterval);
     };
-  }, [jobs]);
+  }, [fetchJobs]);
+
+  // Realtime dashboard refresh (no manual page refresh needed)
+  useEffect(() => {
+    const pollJobs = () => {
+      if (document.visibilityState === "visible") {
+        fetchJobs();
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        fetchJobs();
+      }
+    };
+
+    const refreshInterval = setInterval(pollJobs, 2000);
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      clearInterval(refreshInterval);
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [fetchJobs]);
 
   const handleRunClick = (job: JobWithRuns) => {
     setSelectedJob(job);
@@ -131,9 +162,10 @@ export default function Dashboard() {
 
   // Stats Calculation
   const activeJobs = jobs.filter(j => j.isEnabled).length;
-  const runningJobs = jobs.filter(j => j.runs[0]?.status === "running").length;
+  const runningJobs = jobs.filter(j => getDisplayStatus(j) === "running").length;
+  const successfulJobs = jobs.filter(j => getDisplayStatus(j) === "success").length;
   const successRate = jobs.length > 0 
-    ? Math.round((jobs.filter(j => j.runs[0]?.status === "success").length / jobs.length) * 100) 
+    ? Math.round((successfulJobs / jobs.length) * 100) 
     : 0;
 
   // Filter & Pagination Logic
@@ -240,7 +272,11 @@ export default function Dashboard() {
               <Link href="/jobs/new" className="text-primary hover:underline text-sm">Create one</Link>
             </div>
           ) : (
-            paginatedJobs.map((job) => (
+            paginatedJobs.map((job) => {
+              const displayStatus = getDisplayStatus(job);
+              const isRunning = displayStatus === "running";
+
+              return (
               <div key={job.id} className="bg-white/5 border border-white/10 rounded-xl p-4 space-y-4">
                 <div className="flex justify-between items-start">
                   <div>
@@ -303,19 +339,22 @@ export default function Dashboard() {
                    <div className="text-white/40 text-xs uppercase mb-1">Status</div>
                    <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${
-                        job.runs[0]?.status === "running" ? "bg-blue-500 animate-ping" :
-                        job.runs[0]?.status === "success" ? "bg-green-500" :
-                        job.runs[0]?.status === "failed" ? "bg-red-500" : "bg-white/20"
+                        displayStatus === "running" ? "bg-blue-500 animate-ping" :
+                        displayStatus === "success" ? "bg-green-500" :
+                        displayStatus === "failed" ? "bg-red-500" : "bg-white/20"
                       }`}></div>
                       <span className={`font-medium ${
-                        job.runs[0]?.status === "running" ? "text-blue-400" :
-                        job.runs[0]?.status === "success" ? "text-green-400" :
-                        job.runs[0]?.status === "failed" ? "text-red-400" : "text-muted-foreground"
+                        displayStatus === "running" ? "text-blue-400" :
+                        displayStatus === "success" ? "text-green-400" :
+                        displayStatus === "failed" ? "text-red-400" : "text-muted-foreground"
                       }`}>
-                        {job.runs[0]?.status ? job.runs[0].status.toUpperCase() : "PENDING"}
+                        {displayStatus ? displayStatus.toUpperCase() : "PENDING"}
                       </span>
                    </div>
-                   {job.runs[0]?.status === "running" && (
+                   <div className="text-[10px] text-muted-foreground mt-1">
+                      {formatLastRunAt(job.lastRunAt)}
+                   </div>
+                   {isRunning && (
                       <div className="mt-2 space-y-1">
                         <div className="flex justify-between text-xs">
                            <span className="text-blue-400">{job.runs[0].progressMessage || "Processing..."}</span>
@@ -328,7 +367,7 @@ export default function Dashboard() {
                    )}
                 </div>
               </div>
-            ))
+            )})
           )}
         </div>
 
@@ -357,7 +396,11 @@ export default function Dashboard() {
                   </td>
                 </tr>
               ) : (
-                paginatedJobs.map((job) => (
+                paginatedJobs.map((job) => {
+                  const displayStatus = getDisplayStatus(job);
+                  const isRunning = displayStatus === "running";
+
+                  return (
                   <tr key={job.id} className="table-row-hover group border-b border-white/5 last:border-0">
                     <td className="px-6 py-4">
                       <div className="font-medium text-white">{job.name}</div>
@@ -398,24 +441,24 @@ export default function Dashboard() {
                     <td className="px-6 py-4 hidden sm:table-cell">
                       <div className="flex items-center gap-2">
                         <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                          job.runs[0]?.status === "running" ? "bg-blue-500 animate-pulse" :
-                          job.runs[0]?.status === "success" ? "bg-green-500" :
-                          job.runs[0]?.status === "failed" ? "bg-red-500" : "bg-white/20"
+                          displayStatus === "running" ? "bg-blue-500 animate-pulse" :
+                          displayStatus === "success" ? "bg-green-500" :
+                          displayStatus === "failed" ? "bg-red-500" : "bg-white/20"
                         }`}></div>
                         <span className={`text-xs font-medium whitespace-nowrap ${
-                          job.runs[0]?.status === "running" ? "text-blue-400" :
-                          job.runs[0]?.status === "success" ? "text-green-400" :
-                          job.runs[0]?.status === "failed" ? "text-red-400" : "text-muted-foreground"
+                          displayStatus === "running" ? "text-blue-400" :
+                          displayStatus === "success" ? "text-green-400" :
+                          displayStatus === "failed" ? "text-red-400" : "text-muted-foreground"
                         }`}>
-                          {job.runs[0]?.status ? job.runs[0].status.toUpperCase() : "PENDING"}
+                          {displayStatus ? displayStatus.toUpperCase() : "PENDING"}
                         </span>
                       </div>
                       <div className="text-[10px] text-muted-foreground mt-1 whitespace-nowrap">
-                        {job.lastRunAt ? new Date(job.lastRunAt).toLocaleDateString() : "Never run"}
+                        {formatLastRunAt(job.lastRunAt)}
                       </div>
                     </td>
                     <td className="px-6 py-4 w-1/4 hidden lg:table-cell">
-                       {job.runs[0]?.status === "running" ? (
+                       {isRunning ? (
                          <div className="w-full">
                            <div className="flex justify-between text-xs mb-1">
                              <span className="text-blue-400 animate-pulse">{job.runs[0].progressMessage || "Processing..."}</span>
@@ -458,7 +501,7 @@ export default function Dashboard() {
                       </div>
                     </td>
                   </tr>
-                ))
+                )})
               )}
             </tbody>
           </table>

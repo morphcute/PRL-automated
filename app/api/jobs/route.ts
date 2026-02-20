@@ -111,7 +111,11 @@ export async function GET(req: NextRequest) {
         },
       },
     });
-    return NextResponse.json(jobs);
+    return NextResponse.json(jobs, {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      },
+    });
   } catch (error) {
     console.error("Failed to fetch jobs:", error);
     return NextResponse.json(
@@ -231,7 +235,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Create/Update Job
-    const jobData = {
+    const jobData: any = {
       ...validatedData,
       name: normalizedJobName,
       spreadsheetId: sourceId, // Normalized ID
@@ -243,6 +247,28 @@ export async function POST(req: NextRequest) {
     };
 
     if (existingJob) {
+      const switchedManualToAuto =
+        existingJob.runMode === "manual" &&
+        (validatedData.runMode === "scheduled" || validatedData.runMode === "both");
+      const isOneTimeAutoPilot = isAutoMode && !validatedData.intervalMinutes;
+      const existingStartAtIso = existingJob.startAt ? new Date(existingJob.startAt).toISOString() : null;
+      const nextStartAtIso = parsedStartAt ? parsedStartAt.toISOString() : null;
+
+      // Re-enable one-time auto jobs when user reschedules or switches from manual mode.
+      if (
+        switchedManualToAuto ||
+        (
+          isOneTimeAutoPilot &&
+          (
+            existingJob.cronEnabled === false ||
+            existingStartAtIso !== nextStartAtIso
+          )
+        )
+      ) {
+        jobData.lastRunAt = null;
+        jobData.cronEnabled = true;
+      }
+
       const job = await prisma.syncJob.update({
         where: { id: existingJob.id },
         data: jobData,

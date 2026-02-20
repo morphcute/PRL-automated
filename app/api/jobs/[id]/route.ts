@@ -32,6 +32,14 @@ export async function PATCH(
 ) {
   const params = await props.params;
   try {
+    const existingJob = await prisma.syncJob.findUnique({
+      where: { id: params.id },
+    });
+
+    if (!existingJob) {
+      return NextResponse.json({ error: "Job not found" }, { status: 404 });
+    }
+
     const body = await req.json();
     const validatedData = SyncJobSchema.partial().parse(body);
     const runMode = validatedData.runMode;
@@ -59,6 +67,30 @@ export async function PATCH(
         return NextResponse.json({ error: "Invalid endAt value" }, { status: 400 });
       }
       updateData.endAt = parsedEndAt;
+    }
+
+    const nextRunMode = validatedData.runMode ?? existingJob.runMode;
+    const isAutoMode = nextRunMode === "scheduled" || nextRunMode === "both";
+    const switchedManualToAuto = existingJob.runMode === "manual" && isAutoMode;
+
+    const nextStartAt =
+      Object.prototype.hasOwnProperty.call(validatedData, "startAt")
+        ? (updateData.startAt ?? null)
+        : existingJob.startAt;
+    const nextIntervalMinutes =
+      Object.prototype.hasOwnProperty.call(validatedData, "intervalMinutes")
+        ? (validatedData.intervalMinutes ?? null)
+        : existingJob.intervalMinutes;
+    const isOneTimeAutoPilot = isAutoMode && !nextIntervalMinutes;
+
+    const previousStartAtIso = existingJob.startAt ? new Date(existingJob.startAt).toISOString() : null;
+    const nextStartAtIso = nextStartAt ? new Date(nextStartAt).toISOString() : null;
+    const rescheduledStartAt = previousStartAtIso !== nextStartAtIso;
+
+    // Reset run context so dashboard shows pending for new auto schedule.
+    if (switchedManualToAuto || (isOneTimeAutoPilot && rescheduledStartAt)) {
+      updateData.lastRunAt = null;
+      updateData.cronEnabled = true;
     }
 
     const job = await prisma.syncJob.update({

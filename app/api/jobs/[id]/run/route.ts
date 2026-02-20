@@ -33,10 +33,27 @@ export async function POST(
 
   // Run in background (do not await)
   (async () => {
-    try {
-      const result = await syncPreRegisteredList(job, runRecord.id);
+    let result: { rowsWritten: number; success: boolean } | null = null;
 
-      // Update SyncRun (success)
+    try {
+      result = await syncPreRegisteredList(job, runRecord.id);
+    } catch (error: any) {
+      console.error(`Manual run for job ${job.id} failed during sync:`, error);
+      
+      // Sync itself failed, mark run as failed.
+      await prisma.syncRun.update({
+        where: { id: runRecord.id },
+        data: {
+          completedAt: new Date(),
+          status: "failed",
+          progressMessage: error?.message || "Sync failed",
+        },
+      });
+      return;
+    }
+
+    // Mark successful sync first; post-run metadata updates should not flip status to failed.
+    try {
       await prisma.syncRun.update({
         where: { id: runRecord.id },
         data: {
@@ -46,8 +63,11 @@ export async function POST(
           rowsWritten: result.rowsWritten,
         },
       });
+    } catch (error: any) {
+      console.error(`Manual run for job ${job.id} completed but failed to update run status:`, error);
+    }
 
-      // Update Job lastRunAt
+    try {
       await prisma.syncJob.update({
         where: { id: job.id },
         data: { 
@@ -57,18 +77,8 @@ export async function POST(
           cronEnabled: !!job.intervalMinutes
         },
       });
-
     } catch (error: any) {
-      console.error(`Manual run for job ${job.id} failed:`, error);
-      
-      // Update SyncRun (failed)
-      await prisma.syncRun.update({
-        where: { id: runRecord.id },
-        data: {
-          status: "failed",
-          completedAt: new Date(),
-        },
-      });
+      console.error(`Manual run for job ${job.id} completed but failed to update job metadata:`, error);
     }
   })();
 

@@ -216,6 +216,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
        const targetId = job.targetSpreadsheetId;
        const TAB_NAME = job.sheetName || "Pre Registered List";
        let targetSheetId: number | null = null;
+       let reusedExistingTab = false;
 
        const targetSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId: targetId });
        let targetSheet = targetSpreadsheet.data.sheets?.find(s => s.properties?.title === TAB_NAME);
@@ -236,9 +237,11 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
                 }
              });
              targetSheetId = sheet1.properties?.sheetId || 0;
+             reusedExistingTab = true;
           }
        } else {
           targetSheetId = targetSheet.properties?.sheetId || 0;
+          reusedExistingTab = true;
        }
        
        if (targetSheetId === null && !targetSheet) {
@@ -249,47 +252,55 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
           targetSheetId = createResp.data.replies?.[0].addSheet?.properties?.sheetId || 0;
        }
        
-       // Write Verifier Data
-       if (targetSheetId !== null) {
-          await sheets.spreadsheets.values.clear({ spreadsheetId: targetId, range: `'${TAB_NAME}'!A:Z` });
-          if (verifierRows.length > 0) {
+        // Write Verifier Data
+        if (targetSheetId !== null) {
+          const valuesToWrite = reusedExistingTab ? verifierRows.slice(1) : verifierRows;
+          const startCell = reusedExistingTab ? "A2" : "A1";
+
+          // Keep manual template content intact for reused tabs.
+          if (!reusedExistingTab) {
+             await sheets.spreadsheets.values.clear({ spreadsheetId: targetId, range: `'${TAB_NAME}'!A:F` });
+          }
+          if (valuesToWrite.length > 0) {
              await sheets.spreadsheets.values.update({
                 spreadsheetId: targetId,
-                range: `'${TAB_NAME}'!A1`,
+                range: `'${TAB_NAME}'!${startCell}`,
                 valueInputOption: "USER_ENTERED",
-                requestBody: { values: verifierRows },
+                requestBody: { values: valuesToWrite },
              });
           }
           
           // Apply Formatting for Verifier
-          const requests: any[] = [];
-          // Header
-          requests.push({
-             repeatCell: {
-                range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 4 },
-                cell: { userEnteredFormat: { backgroundColor: { red: 0.1, green: 0.3, blue: 0.2 }, textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true } } },
-                fields: "userEnteredFormat(backgroundColor,textFormat)"
-             }
-          });
-          // Conditional Formatting
-          requests.push({
-             addConditionalFormatRule: {
-                rule: {
-                   ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 3, endColumnIndex: 4 }],
-                   booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] }, format: { backgroundColor: { red: 0.8, green: 1, blue: 0.8 } } }
-                }, index: 0
-             }
-          });
-          requests.push({
-             addConditionalFormatRule: {
-                rule: {
-                   ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 3, endColumnIndex: 4 }],
-                   booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] }, format: { backgroundColor: { red: 1, green: 0.8, blue: 0.8 } } }
-                }, index: 1
-             }
-          });
-          
-          await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
+          if (!reusedExistingTab) {
+             const requests: any[] = [];
+             // Header
+             requests.push({
+                repeatCell: {
+                   range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 4 },
+                   cell: { userEnteredFormat: { backgroundColor: { red: 0.1, green: 0.3, blue: 0.2 }, textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true } } },
+                   fields: "userEnteredFormat(backgroundColor,textFormat)"
+                }
+             });
+             // Conditional Formatting
+             requests.push({
+                addConditionalFormatRule: {
+                   rule: {
+                      ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 3, endColumnIndex: 4 }],
+                      booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] }, format: { backgroundColor: { red: 0.8, green: 1, blue: 0.8 } } }
+                   }, index: 0
+                }
+             });
+             requests.push({
+                addConditionalFormatRule: {
+                   rule: {
+                      ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 3, endColumnIndex: 4 }],
+                      booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] }, format: { backgroundColor: { red: 1, green: 0.8, blue: 0.8 } } }
+                   }, index: 1
+                }
+             });
+             
+             await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
+          }
        }
        
        return { rowsWritten: verifierRows.length, success: true };
@@ -477,6 +488,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     const targetId = job.targetSpreadsheetId;
     const TAB_NAME = job.sheetName || "Pre Registered List";
     let targetSheetId: number | null = null;
+    let reusedExistingTab = false;
     
     // Check if target tab exists in target spreadsheet
     const targetSpreadsheet = await sheets.spreadsheets.get({
@@ -511,26 +523,35 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
              }
           });
           targetSheetId = sheet1.properties?.sheetId || 0;
+          reusedExistingTab = true;
           console.log(`Renamed 'Sheet1' to '${TAB_NAME}'`);
        }
     } else {
        targetSheetId = targetSheet.properties?.sheetId || 0;
+       reusedExistingTab = true;
     }
 
+    const outputEndColumn = job.validationEnabled ? "F" : "E";
+
     if (targetSheetId !== null) {
-      // Clear existing content
-      await sheets.spreadsheets.values.clear({
-        spreadsheetId: targetId,
-        range: `'${TAB_NAME}'!A:Z`,
-      });
+      // Keep manual template content intact for reused tabs.
+      if (!reusedExistingTab) {
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: targetId,
+          range: `'${TAB_NAME}'!A:${outputEndColumn}`,
+        });
+      }
       
+      const valuesToWrite = reusedExistingTab ? rows.slice(1) : rows;
+      const startCell = reusedExistingTab ? "A2" : "A1";
+
       // Write new data
-      if (rows.length > 0) {
+      if (valuesToWrite.length > 0) {
         await sheets.spreadsheets.values.update({
           spreadsheetId: targetId,
-          range: `'${TAB_NAME}'!A1`,
+          range: `'${TAB_NAME}'!${startCell}`,
           valueInputOption: "USER_ENTERED",
-          requestBody: { values: rows },
+          requestBody: { values: valuesToWrite },
         });
       }
       console.log(`Updated tab '${TAB_NAME}'`);
@@ -567,7 +588,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     }
 
     // 3. Apply Formatting (Borders, Colors, Merging)
-    if (targetSheetId !== null && rows.length > 0) {
+    if (targetSheetId !== null && rows.length > 0 && !reusedExistingTab) {
         await updateProgress(95, "Applying formatting...");
         const requests: any[] = [];
 
