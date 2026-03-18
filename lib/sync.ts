@@ -308,43 +308,150 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
              });
           }
           
-          // Apply Formatting for Verifier
-          if (!preserveExistingLayout) {
-             const requests: any[] = [];
-             // Header
-             requests.push({
-                repeatCell: {
-                   range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 6 },
-                   cell: { userEnteredFormat: { backgroundColor: { red: 0.1, green: 0.3, blue: 0.2 }, textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true } } },
-                   fields: "userEnteredFormat(backgroundColor,textFormat)"
-                }
-             });
-             // Conditional Formatting
-             requests.push({
-                addConditionalFormatRule: {
-                   rule: {
-                      ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
-                      booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] }, format: { backgroundColor: { red: 0.8, green: 1, blue: 0.8 } } }
-                   }, index: 0
-                }
-             });
-             requests.push({
-                addConditionalFormatRule: {
-                   rule: {
-                      ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
-                      booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] }, format: { backgroundColor: { red: 1, green: 0.8, blue: 0.8 } } }
-                   }, index: 1
-                }
-             });
-             
-             try {
-               await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
-             } catch (formatError) {
-               // Formatting should not flip the run to failed after data is already written.
-               console.error("Non-fatal verifier formatting error:", formatError);
-             }
-          }
-       }
+           // Apply Formatting for Verifier
+           if (!preserveExistingLayout) {
+              const colCount = 6;
+              const requests: any[] = [];
+
+              // Freeze header row
+              requests.push({
+                 updateSheetProperties: {
+                    properties: { sheetId: targetSheetId, gridProperties: { frozenRowCount: 1 } },
+                    fields: "gridProperties.frozenRowCount"
+                 }
+              });
+
+              // Header — deep navy with white text
+              requests.push({
+                 repeatCell: {
+                    range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: colCount },
+                    cell: { userEnteredFormat: {
+                       backgroundColor: { red: 0.11, green: 0.13, blue: 0.22 },
+                       textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 10 },
+                       horizontalAlignment: "CENTER",
+                       verticalAlignment: "MIDDLE"
+                    }},
+                    fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"
+                 }
+              });
+
+              // Data cells — soft borders, alignment, wrap
+              requests.push({
+                 repeatCell: {
+                    range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: verifierRows.length, startColumnIndex: 0, endColumnIndex: colCount },
+                    cell: { userEnteredFormat: {
+                       borders: {
+                          top: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
+                          bottom: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
+                          left: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
+                          right: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } }
+                       },
+                       horizontalAlignment: "CENTER",
+                       verticalAlignment: "MIDDLE",
+                       wrapStrategy: "WRAP",
+                       textFormat: { fontSize: 10 }
+                    }},
+                    fields: "userEnteredFormat(borders,horizontalAlignment,verticalAlignment,wrapStrategy,textFormat.fontSize)"
+                 }
+              });
+
+              // Alternating row colors — subtle gray stripe
+              for (let r = 1; r < verifierRows.length; r++) {
+                 if (r % 2 === 0) {
+                    requests.push({
+                       repeatCell: {
+                          range: { sheetId: targetSheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: 0, endColumnIndex: colCount },
+                          cell: { userEnteredFormat: { backgroundColor: { red: 0.96, green: 0.96, blue: 0.97 } } },
+                          fields: "userEnteredFormat.backgroundColor"
+                       }
+                    });
+                 }
+              }
+
+              // Conditional Formatting — soft mint green for Verified
+              requests.push({
+                 addConditionalFormatRule: {
+                    rule: {
+                       ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
+                       booleanRule: {
+                          condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] },
+                          format: { backgroundColor: { red: 0.85, green: 0.95, blue: 0.87 }, textFormat: { foregroundColor: { red: 0.1, green: 0.45, blue: 0.2 }, bold: true } }
+                       }
+                    }, index: 0
+                 }
+              });
+
+              // Conditional Formatting — soft rose for Not Found
+              requests.push({
+                 addConditionalFormatRule: {
+                    rule: {
+                       ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
+                       booleanRule: {
+                          condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] },
+                          format: { backgroundColor: { red: 0.98, green: 0.86, blue: 0.86 }, textFormat: { foregroundColor: { red: 0.7, green: 0.15, blue: 0.15 }, bold: true } }
+                       }
+                    }, index: 1
+                 }
+              });
+
+              // Conditional Formatting — soft amber for Error
+              requests.push({
+                 addConditionalFormatRule: {
+                    rule: {
+                       ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
+                       booleanRule: {
+                          condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Error" }] },
+                          format: { backgroundColor: { red: 1, green: 0.95, blue: 0.8 }, textFormat: { foregroundColor: { red: 0.6, green: 0.4, blue: 0 }, bold: true } }
+                       }
+                    }, index: 2
+                 }
+              });
+
+              // Thick header bottom border
+              requests.push({
+                 updateBorders: {
+                    range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: colCount },
+                    bottom: { style: "SOLID_MEDIUM", color: { red: 0.11, green: 0.13, blue: 0.22 } }
+                 }
+              });
+
+              // Auto-resize columns to fit content
+              requests.push({
+                 autoResizeDimensions: {
+                    dimensions: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 0, endIndex: colCount }
+                 }
+              });
+
+              // Set minimum widths
+              requests.push({
+                 updateDimensionProperties: {
+                    range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 0, endIndex: 1 },
+                    properties: { pixelSize: 50 },
+                    fields: "pixelSize"
+                 }
+              });
+              requests.push({
+                 updateDimensionProperties: {
+                    range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 3 },
+                    properties: { pixelSize: 200 },
+                    fields: "pixelSize"
+                 }
+              });
+              requests.push({
+                 updateDimensionProperties: {
+                    range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 5, endIndex: 6 },
+                    properties: { pixelSize: 110 },
+                    fields: "pixelSize"
+                 }
+              });
+              
+              try {
+                await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
+              } catch (formatError) {
+                console.error("Non-fatal verifier formatting error:", formatError);
+              }
+           }
+        }
        
        return { rowsWritten: verifierRows.length, success: true };
     }
@@ -640,21 +747,24 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     // 3. Apply Formatting (Borders, Colors, Merging)
     if (targetSheetId !== null && rows.length > 0 && !preserveExistingLayout) {
         await updateProgress(95, "Applying formatting...");
+        const colCount = job.validationEnabled ? 6 : 5;
         const requests: any[] = [];
 
-        // 1. Format Header (Row 0)
+        // Freeze header row so it stays visible when scrolling
+        requests.push({
+            updateSheetProperties: {
+                properties: { sheetId: targetSheetId, gridProperties: { frozenRowCount: 1 } },
+                fields: "gridProperties.frozenRowCount"
+            }
+        });
+
+        // 1. Header — deep navy with white text
         requests.push({
             repeatCell: {
-                range: {
-                    sheetId: targetSheetId,
-                    startRowIndex: 0,
-                    endRowIndex: 1,
-                    startColumnIndex: 0,
-                    endColumnIndex: job.validationEnabled ? 6 : 5
-                },
+                range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: colCount },
                 cell: {
                     userEnteredFormat: {
-                        backgroundColor: { red: 0.1, green: 0.3, blue: 0.2 }, // Dark Green
+                        backgroundColor: { red: 0.11, green: 0.13, blue: 0.22 },
                         textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 10 },
                         horizontalAlignment: "CENTER",
                         verticalAlignment: "MIDDLE"
@@ -664,53 +774,55 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
             }
         });
 
-        // 2. Format Data Cells (Borders & Alignment)
+        // 2. Data Cells — soft borders, alignment, wrap
         requests.push({
             repeatCell: {
-                range: {
-                    sheetId: targetSheetId,
-                    startRowIndex: 0, // Include header in borders
-                    endRowIndex: rows.length,
-                    startColumnIndex: 0,
-                    endColumnIndex: job.validationEnabled ? 6 : 5
-                },
+                range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: rows.length, startColumnIndex: 0, endColumnIndex: colCount },
                 cell: {
                     userEnteredFormat: {
                         borders: {
-                            top: { style: "SOLID" },
-                            bottom: { style: "SOLID" },
-                            left: { style: "SOLID" },
-                            right: { style: "SOLID" }
+                            top: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
+                            bottom: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
+                            left: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
+                            right: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } }
                         },
                         horizontalAlignment: "CENTER",
                         verticalAlignment: "MIDDLE",
-                        wrapStrategy: "WRAP"
+                        wrapStrategy: "WRAP",
+                        textFormat: { fontSize: 10 }
                     }
                 },
-                fields: "userEnteredFormat(borders,horizontalAlignment,verticalAlignment,wrapStrategy)"
+                fields: "userEnteredFormat(borders,horizontalAlignment,verticalAlignment,wrapStrategy,textFormat.fontSize)"
             }
         });
 
+        // 3. Alternating team row colors for better readability
+        for (let i = 0; i < mergeRanges.length; i++) {
+            const range = mergeRanges[i];
+            if (i % 2 === 1) {
+                // Odd teams get a subtle light blue-gray tint
+                requests.push({
+                    repeatCell: {
+                        range: { sheetId: targetSheetId, startRowIndex: range.startRow, endRowIndex: range.endRow, startColumnIndex: 0, endColumnIndex: colCount },
+                        cell: { userEnteredFormat: { backgroundColor: { red: 0.95, green: 0.96, blue: 0.98 } } },
+                        fields: "userEnteredFormat.backgroundColor"
+                    }
+                });
+            }
+        }
+
         // Conditional Formatting for Status Column (if enabled)
         if (job.validationEnabled) {
-             // Green for "Verified"
+             // Soft mint green for "Verified"
              requests.push({
                 addConditionalFormatRule: {
                     rule: {
-                        ranges: [{
-                            sheetId: targetSheetId,
-                            startRowIndex: 1,
-                            endRowIndex: rows.length,
-                            startColumnIndex: 5, // Status Column (F)
-                            endColumnIndex: 6
-                        }],
+                        ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: rows.length, startColumnIndex: 5, endColumnIndex: 6 }],
                         booleanRule: {
-                            condition: {
-                                type: "TEXT_EQ",
-                                values: [{ userEnteredValue: "Verified" }]
-                            },
+                            condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] },
                             format: {
-                                backgroundColor: { red: 0.8, green: 1, blue: 0.8 } // Light Green
+                                backgroundColor: { red: 0.85, green: 0.95, blue: 0.87 },
+                                textFormat: { foregroundColor: { red: 0.1, green: 0.45, blue: 0.2 }, bold: true }
                             }
                         }
                     },
@@ -718,101 +830,114 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
                 }
              });
 
-             // Red for "Not Found"
+             // Soft rose for "Not Found"
              requests.push({
                 addConditionalFormatRule: {
                     rule: {
-                        ranges: [{
-                            sheetId: targetSheetId,
-                            startRowIndex: 1,
-                            endRowIndex: rows.length,
-                            startColumnIndex: 5,
-                            endColumnIndex: 6
-                        }],
+                        ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: rows.length, startColumnIndex: 5, endColumnIndex: 6 }],
                         booleanRule: {
-                            condition: {
-                                type: "TEXT_EQ",
-                                values: [{ userEnteredValue: "Not Found" }]
-                            },
+                            condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] },
                             format: {
-                                backgroundColor: { red: 1, green: 0.8, blue: 0.8 } // Light Red
+                                backgroundColor: { red: 0.98, green: 0.86, blue: 0.86 },
+                                textFormat: { foregroundColor: { red: 0.7, green: 0.15, blue: 0.15 }, bold: true }
                             }
                         }
                     },
                     index: 1
                 }
              });
+
+             // Soft amber for "Error"
+             requests.push({
+                addConditionalFormatRule: {
+                    rule: {
+                        ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: rows.length, startColumnIndex: 5, endColumnIndex: 6 }],
+                        booleanRule: {
+                            condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Error" }] },
+                            format: {
+                                backgroundColor: { red: 1, green: 0.95, blue: 0.8 },
+                                textFormat: { foregroundColor: { red: 0.6, green: 0.4, blue: 0 }, bold: true }
+                            }
+                        }
+                    },
+                    index: 2
+                }
+             });
         }
 
-        // 3. Merge "No." Columns
+        // 4. Merge "No." Columns + team separators
         for (const range of mergeRanges) {
             requests.push({
                 mergeCells: {
-                    range: {
-                        sheetId: targetSheetId,
-                        startRowIndex: range.startRow,
-                        endRowIndex: range.endRow,
-                        startColumnIndex: 0,
-                        endColumnIndex: 1
-                    },
+                    range: { sheetId: targetSheetId, startRowIndex: range.startRow, endRowIndex: range.endRow, startColumnIndex: 0, endColumnIndex: 1 },
                     mergeType: "MERGE_ALL"
                 }
             });
+
+            // Bold the team number in the merged cell
+            requests.push({
+                repeatCell: {
+                    range: { sheetId: targetSheetId, startRowIndex: range.startRow, endRowIndex: range.startRow + 1, startColumnIndex: 0, endColumnIndex: 1 },
+                    cell: { userEnteredFormat: { textFormat: { bold: true, fontSize: 11 } } },
+                    fields: "userEnteredFormat.textFormat(bold,fontSize)"
+                }
+            });
             
-            // Add thick bottom border for each team block
-             requests.push({
+            // Thick dark bottom border to separate teams
+            requests.push({
                 updateBorders: {
-                    range: {
-                        sheetId: targetSheetId,
-                        startRowIndex: range.endRow - 1, // Last row of the block
-                        endRowIndex: range.endRow,
-                        startColumnIndex: 0,
-                        endColumnIndex: job.validationEnabled ? 6 : 5
-                    },
-                    bottom: { style: "SOLID_MEDIUM" } // Thicker border to separate teams
+                    range: { sheetId: targetSheetId, startRowIndex: range.endRow - 1, endRowIndex: range.endRow, startColumnIndex: 0, endColumnIndex: colCount },
+                    bottom: { style: "SOLID_MEDIUM", color: { red: 0.4, green: 0.4, blue: 0.45 } }
                 }
             });
         }
         
-        // Add thick border around the header
+        // Thick header bottom border
         requests.push({
-             updateBorders: {
-                range: {
-                    sheetId: targetSheetId,
-                    startRowIndex: 0,
-                    endRowIndex: 1,
-                    startColumnIndex: 0,
-                    endColumnIndex: job.validationEnabled ? 6 : 5
-                },
-                bottom: { style: "SOLID_MEDIUM" }
+            updateBorders: {
+                range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: colCount },
+                bottom: { style: "SOLID_MEDIUM", color: { red: 0.11, green: 0.13, blue: 0.22 } }
             }
         });
-        
-        // Resize columns for better visibility
+
+        // 5. Auto-resize columns then set minimums
+        requests.push({
+            autoResizeDimensions: {
+                dimensions: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 0, endIndex: colCount }
+            }
+        });
+
+        // Minimum column widths
         requests.push({
             updateDimensionProperties: {
-                range: {
-                    sheetId: targetSheetId,
-                    dimension: "COLUMNS",
-                    startIndex: 0,
-                    endIndex: 1
-                },
-                properties: { pixelSize: 40 }, // "No." column narrow
+                range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 0, endIndex: 1 },
+                properties: { pixelSize: 50 },
                 fields: "pixelSize"
             }
         });
         requests.push({
             updateDimensionProperties: {
-                range: {
-                    sheetId: targetSheetId,
-                    dimension: "COLUMNS",
-                    startIndex: 1,
-                    endIndex: 3
-                },
-                properties: { pixelSize: 180 }, // Name/IGN wider
+                range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 3 },
+                properties: { pixelSize: 200 },
                 fields: "pixelSize"
             }
         });
+        requests.push({
+            updateDimensionProperties: {
+                range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 3, endIndex: 5 },
+                properties: { pixelSize: 100 },
+                fields: "pixelSize"
+            }
+        });
+        if (job.validationEnabled) {
+            requests.push({
+                updateDimensionProperties: {
+                    range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 5, endIndex: 6 },
+                    properties: { pixelSize: 110 },
+                    fields: "pixelSize"
+                }
+            });
+        }
 
         try {
           await sheets.spreadsheets.batchUpdate({
@@ -820,7 +945,6 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
               requestBody: { requests }
           });
         } catch (formatError) {
-          // Formatting should not flip the run to failed after data is already written.
           console.error("Non-fatal formatting error:", formatError);
         }
     }

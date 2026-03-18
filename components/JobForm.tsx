@@ -30,181 +30,207 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
   const jobType = form.watch("type");
   const validationEnabled = form.watch("validationEnabled");
 
-  // Force validation to true if jobType is 'verifier'
   if (jobType === "verifier" && !validationEnabled) {
-     form.setValue("validationEnabled", true);
+    form.setValue("validationEnabled", true);
   }
 
   const handleSubmit = async (data: SyncJobInput) => {
     if (onSubmit) {
-      // Convert local time strings to UTC ISO strings before submitting
       const adjustedData = { ...data };
       if (data.startAt) {
         adjustedData.startAt = new Date(data.startAt).toISOString();
       }
-
-      // Automatically enable cron if runMode is set to auto-pilot (both) or scheduled
       if (data.runMode === "both" || data.runMode === "scheduled") {
         adjustedData.cronEnabled = true;
       } else {
         adjustedData.cronEnabled = false;
       }
-
       await onSubmit(adjustedData);
     }
   };
 
+  // Step progress
+  const steps = [
+    { label: "Basic Info", icon: "1" },
+    { label: "Data Sources", icon: "2" },
+    { label: "Automation", icon: "3" },
+  ];
+
   return (
-    <form onSubmit={form.handleSubmit(handleSubmit)} className="max-w-3xl mx-auto py-10 space-y-8">
+    <form onSubmit={form.handleSubmit(handleSubmit)} className="max-w-3xl mx-auto py-6 md:py-10 space-y-8 animate-fade-in">
       
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white tracking-tight">Configure Sync Job</h2>
-          <p className="text-muted-foreground mt-1">Set up your automation parameters below.</p>
+          <p className="text-white/40 mt-1 text-sm">Set up your automation parameters below.</p>
         </div>
-        <Link 
-          href="/dashboard"
-          className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10"
-        >
+        <Link href="/dashboard" className="btn-ghost">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
           Back to Dashboard
         </Link>
       </div>
 
-      <div className="glass-panel rounded-xl p-8 space-y-8">
+      {/* Step Indicator */}
+      <div className="flex items-center justify-center gap-0">
+        {steps.map((step, i) => (
+          <div key={i} className="flex items-center">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-white/[0.06] border border-white/[0.1] flex items-center justify-center text-xs font-bold text-white/40">
+                {step.icon}
+              </div>
+              <span className="text-xs font-medium text-white/40 hidden sm:block">{step.label}</span>
+            </div>
+            {i < steps.length - 1 && (
+              <div className="w-8 sm:w-16 h-px bg-white/[0.08] mx-2 sm:mx-4" />
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="glass-panel rounded-2xl p-6 md:p-8 space-y-8">
         
         {/* Section 1: Basic Info */}
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-white">Job Name</label>
-            <input 
-              {...form.register("name")} 
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none transition-all" 
-              placeholder="e.g. Weekly Tournament List" 
-            />
-            {form.formState.errors.name && <p className="text-xs text-red-400">{form.formState.errors.name.message}</p>}
+        <div className="space-y-5">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-6 h-6 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400 text-xs font-bold">1</div>
+            <span className="text-sm font-semibold text-white">Basic Information</span>
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-white">Job Type</label>
+            <label className="text-sm font-medium text-white/80">Job Name</label>
+            <input 
+              {...form.register("name")} 
+              className="input-field" 
+              placeholder="e.g. Weekly Tournament List" 
+            />
+            {form.formState.errors.name && <p className="text-xs text-red-400 flex items-center gap-1"><svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01" /></svg>{form.formState.errors.name.message}</p>}
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-white/80">Job Type</label>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {(["5v5", "3v3", "onsite", "verifier"] as const).map((type) => (
-                <label key={type} className={`relative flex items-center justify-center p-3 rounded-lg border cursor-pointer transition-all ${
+                <label key={type} className={`relative flex items-center justify-center p-3.5 rounded-xl border cursor-pointer transition-all duration-200 ${
                   jobType === type 
-                    ? 'bg-primary/20 border-primary text-white font-medium' 
-                    : 'bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10'
+                    ? 'bg-blue-500/10 border-blue-500/30 text-white shadow-lg shadow-blue-500/5' 
+                    : 'bg-white/[0.03] border-white/[0.08] text-white/40 hover:bg-white/[0.06] hover:border-white/[0.12]'
                 }`}>
-                  <input 
-                    type="radio" 
-                    value={type} 
-                    {...form.register("type")} 
-                    className="sr-only"
-                  />
-                  <span className="uppercase text-sm">{type === "verifier" ? "Verifier" : type}</span>
+                  <input type="radio" value={type} {...form.register("type")} className="sr-only" />
+                  <span className="uppercase text-sm font-semibold">{type === "verifier" ? "Verifier" : type}</span>
                 </label>
               ))}
             </div>
           </div>
 
           {jobType !== "verifier" && (
-            <div className="flex items-center gap-3 p-4 rounded-lg bg-white/5 border border-white/10">
+            <label className="flex items-center gap-4 p-4 rounded-xl bg-white/[0.03] border border-white/[0.08] cursor-pointer hover:bg-white/[0.05] transition-all group">
               <input 
                 type="checkbox" 
                 id="validationEnabled"
                 {...form.register("validationEnabled")} 
-                className="w-5 h-5 rounded border-white/20 bg-white/10 text-primary focus:ring-primary/50"
+                className="w-5 h-5 rounded border-white/20 bg-white/10 text-blue-500 focus:ring-blue-500/50 cursor-pointer"
               />
-              <label htmlFor="validationEnabled" className="cursor-pointer">
-                <span className="block text-sm font-medium text-white">Enable MLBB ID Verification</span>
-                <span className="block text-xs text-muted-foreground">Verify Player ID & Zone ID</span>
-              </label>
-            </div>
+              <div>
+                <span className="block text-sm font-medium text-white group-hover:text-white/90">Enable MLBB ID Verification</span>
+                <span className="block text-xs text-white/30 mt-0.5">Verify Player ID & Zone ID against the game server</span>
+              </div>
+            </label>
           )}
         </div>
 
-        <div className="h-px bg-white/10" />
+        <div className="h-px bg-white/[0.06]" />
 
         {/* Section 2: Data Sources */}
-        <div className="space-y-4">
+        <div className="space-y-5">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-6 h-6 rounded-lg bg-violet-500/10 flex items-center justify-center text-violet-400 text-xs font-bold">2</div>
+            <span className="text-sm font-semibold text-white">Data Sources</span>
+          </div>
+
           <div className="space-y-2">
-            <label className="text-sm font-medium text-white">Source Spreadsheet URL</label>
+            <label className="text-sm font-medium text-white/80">Source Spreadsheet URL</label>
             <input 
               {...form.register("spreadsheetId")} 
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white font-mono text-sm placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none transition-all" 
+              className="input-field font-mono !text-xs" 
               placeholder="https://docs.google.com/spreadsheets/d/..." 
             />
             {form.formState.errors.spreadsheetId && <p className="text-xs text-red-400">{form.formState.errors.spreadsheetId.message}</p>}
           </div>
 
           <div className="space-y-2">
-            <label className="text-sm font-medium text-white">Target Sheet Name</label>
+            <label className="text-sm font-medium text-white/80">Target Sheet Name</label>
             <input 
               {...form.register("targetSpreadsheetName")} 
-              className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white placeholder:text-muted-foreground focus:ring-2 focus:ring-primary/50 focus:border-primary/50 outline-none transition-all" 
+              className="input-field" 
               placeholder="e.g. PRL - Season 5" 
             />
-            <p className="text-xs text-muted-foreground">This file will be created in your Google Drive if it doesn't exist.</p>
+            <p className="text-[10px] text-white/25 flex items-center gap-1">
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              This file will be created in your Google Drive if it doesn&apos;t exist.
+            </p>
             {form.formState.errors.targetSpreadsheetName && <p className="text-xs text-red-400">{form.formState.errors.targetSpreadsheetName.message}</p>}
           </div>
         </div>
 
-        <div className="h-px bg-white/10" />
+        <div className="h-px bg-white/[0.06]" />
 
         {/* Section 3: Automation */}
-        <div className="space-y-4">
-          <label className="text-sm font-medium text-white">Execution Mode</label>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <label className={`relative p-4 rounded-lg border cursor-pointer transition-all flex items-start gap-3 ${
+        <div className="space-y-5">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 text-xs font-bold">3</div>
+            <span className="text-sm font-semibold text-white">Execution Mode</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label className={`relative p-5 rounded-xl border cursor-pointer transition-all duration-200 flex items-start gap-4 ${
               runMode === 'manual' 
-                ? 'bg-blue-500/10 border-blue-500/50' 
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
+                ? 'bg-sky-500/5 border-sky-500/30 shadow-lg shadow-sky-500/5' 
+                : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.05]'
             }`}>
-              <input 
-                type="radio" 
-                value="manual" 
-                {...form.register("runMode")} 
-                className="sr-only"
-              />
-              <div className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center ${runMode === 'manual' ? 'border-blue-500' : 'border-muted-foreground'}`}>
-                {runMode === 'manual' && <div className="w-2 h-2 rounded-full bg-blue-500" />}
+              <input type="radio" value="manual" {...form.register("runMode")} className="sr-only" />
+              <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                runMode === 'manual' ? 'border-sky-400' : 'border-white/20'
+              }`}>
+                {runMode === 'manual' && <div className="w-2.5 h-2.5 rounded-full bg-sky-400" />}
               </div>
               <div>
-                <span className={`block text-sm font-medium ${runMode === 'manual' ? 'text-blue-400' : 'text-white'}`}>Manual Only</span>
-                <span className="block text-xs text-muted-foreground mt-1">Run only when triggered manually.</span>
+                <span className={`block text-sm font-semibold ${runMode === 'manual' ? 'text-sky-400' : 'text-white/80'}`}>Manual Only</span>
+                <span className="block text-xs text-white/30 mt-1">Run only when you click the Run button.</span>
               </div>
             </label>
 
-            <label className={`relative p-4 rounded-lg border cursor-pointer transition-all flex items-start gap-3 ${
+            <label className={`relative p-5 rounded-xl border cursor-pointer transition-all duration-200 flex items-start gap-4 ${
               runMode === 'both' 
-                ? 'bg-purple-500/10 border-purple-500/50' 
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
+                ? 'bg-violet-500/5 border-violet-500/30 shadow-lg shadow-violet-500/5' 
+                : 'bg-white/[0.03] border-white/[0.08] hover:bg-white/[0.05]'
             }`}>
-              <input 
-                type="radio" 
-                value="both" 
-                {...form.register("runMode")} 
-                className="sr-only"
-              />
-              <div className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center ${runMode === 'both' ? 'border-purple-500' : 'border-muted-foreground'}`}>
-                {runMode === 'both' && <div className="w-2 h-2 rounded-full bg-purple-500" />}
+              <input type="radio" value="both" {...form.register("runMode")} className="sr-only" />
+              <div className={`mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                runMode === 'both' ? 'border-violet-400' : 'border-white/20'
+              }`}>
+                {runMode === 'both' && <div className="w-2.5 h-2.5 rounded-full bg-violet-400" />}
               </div>
               <div>
-                <span className={`block text-sm font-medium ${runMode === 'both' ? 'text-purple-400' : 'text-white'}`}>Auto-Pilot</span>
-                <span className="block text-xs text-muted-foreground mt-1">Run automatically + Manual option.</span>
+                <span className={`block text-sm font-semibold ${runMode === 'both' ? 'text-violet-400' : 'text-white/80'}`}>Auto-Pilot</span>
+                <span className="block text-xs text-white/30 mt-1">Runs automatically on schedule + manual.</span>
               </div>
             </label>
           </div>
 
           {(runMode === "both" || runMode === "scheduled") && (
-            <div className="pt-4 animate-in fade-in slide-in-from-top-2">
-              <label className="text-sm font-medium text-white mb-2 block">Start Date & Time *</label>
+            <div className="pt-2 animate-slide-up">
+              <label className="text-sm font-medium text-white/80 mb-2 block">Start Date & Time *</label>
               <input 
                 type="datetime-local" 
                 {...form.register("startAt")} 
                 required={runMode === "both" || runMode === "scheduled"}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white focus:ring-2 focus:ring-purple-500/50 outline-none" 
+                className="input-field" 
               />
-              <p className="text-xs text-muted-foreground mt-2">Auto-pilot runs at/after this time and one-time jobs run only once automatically.</p>
+              <p className="text-[10px] text-white/25 mt-2 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                Auto-pilot runs at/after this time. One-time jobs run only once automatically.
+              </p>
             </div>
           )}
         </div>
@@ -215,23 +241,25 @@ export function JobForm({ initialData, onSubmit }: JobFormProps) {
 
       </div>
 
-      <div className="flex justify-end pt-4">
+      <div className="flex justify-end pt-2">
         <button 
           type="submit" 
           disabled={form.formState.isSubmitting}
-          className="bg-primary hover:bg-blue-600 text-white font-medium py-2.5 px-8 rounded-lg shadow-lg shadow-blue-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          className="btn-primary !py-3 !px-8"
         >
           {form.formState.isSubmitting ? (
-             <>
-               <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-               Creating...
-             </>
+            <>
+              <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+              Creating...
+            </>
           ) : (
-            "Create Job"
+            <>
+              Create Job
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+            </>
           )}
         </button>
       </div>
-
     </form>
   );
 }

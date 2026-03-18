@@ -1,128 +1,135 @@
 import Link from "next/link";
+import { auth } from "@/lib/auth";
 import HomePageClient from "@/components/HomePageClient";
 import PageViewTracker from "@/components/PageViewTracker";
-import { isStaticExportBuild } from "@/lib/static-mode";
 
 export default async function HomePage() {
-  let session: { user?: unknown } | null = null;
-
-  if (!isStaticExportBuild) {
-    const { auth } = await import("@/lib/auth");
-    session = await auth();
-  }
+  const session = await auth();
 
   return (
-    <div className="flex min-h-screen flex-col">
-      {!isStaticExportBuild && <PageViewTracker page="home" />}
+    <div className="flex min-h-screen flex-col -m-4 md:-m-8">
+      <PageViewTracker page="home" />
+
       {/* Navigation */}
-      <header className="px-6 py-4 flex justify-between items-center border-b border-white/10 bg-black/20 backdrop-blur-md sticky top-0 z-50">
-        <div className="flex items-center gap-2">
-           <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center text-primary">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-           </div>
-           <span className="font-bold text-xl text-white tracking-tight">PRL Automated</span>
+      <header className="px-6 py-4 flex justify-between items-center border-b border-white/[0.06] bg-black/30 backdrop-blur-xl sticky top-0 z-50">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+          </div>
+          <span className="font-bold text-xl text-white tracking-tight">PRL Automated</span>
         </div>
-        <nav className="hidden md:flex gap-6 text-sm font-medium text-muted-foreground">
+        <nav className="hidden md:flex gap-6 text-sm font-medium text-white/50">
           <Link href="#features" className="hover:text-white transition-colors">Features</Link>
           <Link href="#how-it-works" className="hover:text-white transition-colors">How it Works</Link>
           <Link href="/privacy" className="hover:text-white transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-white transition-colors">Terms</Link>
         </nav>
         {session ? (
-          <Link 
-            href="/dashboard" 
-            className="px-4 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition-colors border border-white/10"
-          >
+          <Link href="/dashboard" className="btn-primary text-sm !py-2 !px-4">
             Dashboard
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
           </Link>
         ) : (
-          <Link 
-            href="/login" 
-            className="px-4 py-2 rounded-lg bg-primary hover:bg-blue-600 text-white text-sm font-medium transition-colors"
-          >
+          <Link href="/login" className="btn-primary text-sm !py-2 !px-4">
             Sign In
           </Link>
         )}
       </header>
 
-      {/* Hero Section */}
+      {/* Hero */}
       <main className="flex-1">
-        <section className="py-20 md:py-32 px-6 text-center max-w-5xl mx-auto space-y-8">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-medium text-primary mb-4">
-            <span className="w-2 h-2 rounded-full bg-primary animate-pulse"></span>
-            Automated MLBB Registration Verification
-          </div>
-          <h1 className="text-4xl md:text-6xl font-bold text-white tracking-tight leading-tight">
-            Verify Tournament Registrations <br/> 
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Instantly & Accurately</span>
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-            Stop manually checking IDs. PRL Automated fetches your Google Sheet registrations and verifies Mobile Legends player IDs against the official server in seconds.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center pt-8">
-            <Link 
-              href={session ? "/dashboard" : "/login"} 
-              className="px-8 py-3.5 rounded-xl bg-primary hover:bg-blue-600 text-white font-semibold transition-all shadow-lg shadow-blue-500/25 flex items-center justify-center gap-2"
-            >
-              {session ? "Go to Dashboard" : "Get Started"}
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
-            </Link>
-            <Link 
-              href="#how-it-works" 
-              className="px-8 py-3.5 rounded-xl bg-white/5 hover:bg-white/10 text-white font-semibold transition-all border border-white/10 flex items-center justify-center"
-            >
-              Learn More
-            </Link>
+        <section className="py-24 md:py-36 px-6 text-center max-w-5xl mx-auto space-y-8 relative">
+          {/* Decorative orbs */}
+          <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-[100px] pointer-events-none" />
+          <div className="absolute bottom-10 right-10 w-64 h-64 bg-violet-500/10 rounded-full blur-[100px] pointer-events-none" />
+
+          <div className="relative z-10 space-y-8">
+            <div className="animate-fade-in inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/[0.04] border border-white/[0.08] text-xs font-medium text-blue-400">
+              <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+              Automated MLBB Registration Verification
+            </div>
+
+            <h1 className="animate-slide-up text-4xl md:text-6xl lg:text-7xl font-bold text-white tracking-tight leading-[1.1]">
+              Verify Tournament<br/>
+              Registrations{" "}
+              <span className="shimmer-text">Instantly</span>
+            </h1>
+
+            <p className="animate-slide-up stagger-1 text-lg md:text-xl text-white/50 max-w-2xl mx-auto leading-relaxed">
+              Stop manually checking IDs. PRL Automated verifies Mobile Legends player IDs against the official server and syncs everything to your Google Sheet — in seconds.
+            </p>
+
+            <div className="animate-slide-up stagger-2 flex flex-col sm:flex-row gap-4 justify-center pt-4">
+              <Link href={session ? "/dashboard" : "/login"} className="btn-primary text-base !py-3.5 !px-8">
+                {session ? "Go to Dashboard" : "Get Started Free"}
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+              </Link>
+              <Link href="#how-it-works" className="btn-ghost text-base !py-3.5 !px-8">
+                Learn More
+              </Link>
+            </div>
           </div>
         </section>
 
-        {/* Features Grid */}
-        <section id="features" className="py-20 px-6 bg-white/5 border-y border-white/5">
+        {/* Features */}
+        <section id="features" className="py-24 px-6 border-y border-white/[0.06]">
           <div className="max-w-6xl mx-auto">
-            <h2 className="text-3xl font-bold text-white text-center mb-16">Why Organizers Trust Us</h2>
-            <div className="grid md:grid-cols-3 gap-8">
+            <div className="text-center mb-16">
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Why Organizers Trust Us</h2>
+              <p className="text-white/40 max-w-xl mx-auto">Everything you need to run professional tournaments, automated.</p>
+            </div>
+            <div className="grid md:grid-cols-3 gap-6">
               {[
                 {
                   title: "Automated Verification",
-                  desc: "Automatically validate Player IDs and Zone IDs directly with the game server. No more fake registrations.",
+                  desc: "Validate Player IDs and Zone IDs directly against the game server. No more fake registrations slipping through.",
                   icon: (
-                    <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  )
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  ),
+                  color: "from-emerald-500 to-green-600",
+                  glow: "shadow-emerald-500/20"
                 },
                 {
                   title: "Google Sheets Sync",
-                  desc: "We read your 'Pre Registered List' securely and write the verification status back to your own spreadsheet.",
+                  desc: "Reads your registration sheet and writes verification status back automatically. Your data stays in your Drive.",
                   icon: (
-                    <svg className="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  )
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  ),
+                  color: "from-blue-500 to-cyan-600",
+                  glow: "shadow-blue-500/20"
                 },
                 {
                   title: "Privacy First",
-                  desc: "We don't store your data. Your spreadsheet content is processed in-transit and stays in your Google Drive.",
+                  desc: "We don't store your spreadsheet data. Everything is processed in-transit and stays securely in your Google Drive.",
                   icon: (
-                    <svg className="w-6 h-6 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                  )
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                  ),
+                  color: "from-violet-500 to-purple-600",
+                  glow: "shadow-violet-500/20"
                 }
               ].map((feature, i) => (
-                <div key={i} className="p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-primary/50 transition-colors">
-                  <div className="w-12 h-12 rounded-lg bg-white/5 flex items-center justify-center mb-4">
+                <div key={i} className="glass-panel-hover rounded-2xl p-7 group">
+                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.color} flex items-center justify-center mb-5 text-white shadow-lg ${feature.glow} group-hover:scale-110 transition-transform duration-300`}>
                     {feature.icon}
                   </div>
-                  <h3 className="text-xl font-semibold text-white mb-2">{feature.title}</h3>
-                  <p className="text-muted-foreground text-sm leading-relaxed">{feature.desc}</p>
+                  <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
+                  <p className="text-white/40 text-sm leading-relaxed">{feature.desc}</p>
                 </div>
               ))}
             </div>
           </div>
         </section>
 
-        {/* Stats Section */}
+        {/* Stats */}
         <HomePageClient />
 
         {/* How It Works */}
-        <section id="how-it-works" className="py-20 px-6 max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-white text-center mb-16">How It Works</h2>
-          <div className="space-y-12">
+        <section id="how-it-works" className="py-24 px-6 max-w-4xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">How It Works</h2>
+            <p className="text-white/40">Three simple steps to automate your tournament.</p>
+          </div>
+          <div className="space-y-0">
             {[
               {
                 step: "01",
@@ -132,33 +139,54 @@ export default async function HomePage() {
               {
                 step: "02",
                 title: "Configure Verification",
-                desc: "Select the columns where Player IDs and Server IDs are located."
+                desc: "Choose your tournament type (5v5, 3v3, Onsite) and set up automated scheduling."
               },
               {
                 step: "03",
                 title: "Run Automation",
-                desc: "Click 'Run' and watch as we verify every player and update your sheet with 'Verified' or 'Not Found' status."
+                desc: "Click Run and watch as every player is verified automatically — status written back to your sheet."
               }
             ].map((item, i) => (
-              <div key={i} className="flex gap-6 items-start">
-                <div className="text-4xl font-bold text-white/10">{item.step}</div>
-                <div>
-                  <h3 className="text-xl font-semibold text-white mb-2">{item.title}</h3>
-                  <p className="text-muted-foreground">{item.desc}</p>
+              <div key={i} className="flex gap-6 items-start relative group">
+                {/* Timeline line */}
+                {i < 2 && (
+                  <div className="absolute left-[23px] top-14 bottom-0 w-px bg-gradient-to-b from-white/10 to-transparent" />
+                )}
+                <div className="w-12 h-12 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-sm font-bold text-white/30 flex-shrink-0 group-hover:bg-blue-500/10 group-hover:border-blue-500/20 group-hover:text-blue-400 transition-all duration-300">
+                  {item.step}
+                </div>
+                <div className="pb-12">
+                  <h3 className="text-lg font-semibold text-white mb-1.5">{item.title}</h3>
+                  <p className="text-white/40 text-sm leading-relaxed">{item.desc}</p>
                 </div>
               </div>
             ))}
           </div>
         </section>
+
+        {/* CTA */}
+        <section className="py-20 px-6">
+          <div className="max-w-3xl mx-auto text-center glass-panel rounded-3xl p-12 relative overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-violet-500/5" />
+            <div className="relative z-10">
+              <h2 className="text-3xl font-bold text-white mb-4">Ready to Automate?</h2>
+              <p className="text-white/40 mb-8 max-w-lg mx-auto">Join tournament organizers who save hours every event with automated verification.</p>
+              <Link href={session ? "/dashboard" : "/login"} className="btn-primary inline-flex text-base !py-3.5 !px-8">
+                {session ? "Open Dashboard" : "Start for Free"}
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg>
+              </Link>
+            </div>
+          </div>
+        </section>
       </main>
 
       {/* Footer */}
-      <footer className="py-8 px-6 border-t border-white/10 text-center text-sm text-muted-foreground">
-        <div className="flex justify-center gap-6 mb-4">
-          <Link href="/privacy" className="hover:text-white">Privacy Policy</Link>
-          <Link href="/terms" className="hover:text-white">Terms of Service</Link>
+      <footer className="py-8 px-6 border-t border-white/[0.06] text-center">
+        <div className="flex justify-center gap-6 mb-4 text-sm">
+          <Link href="/privacy" className="text-white/30 hover:text-white/60 transition-colors">Privacy Policy</Link>
+          <Link href="/terms" className="text-white/30 hover:text-white/60 transition-colors">Terms of Service</Link>
         </div>
-        <p>© {new Date().getFullYear()} PRL Automated. All rights reserved.</p>
+        <p className="text-white/20 text-sm">© {new Date().getFullYear()} PRL Automated. All rights reserved.</p>
       </footer>
     </div>
   );
