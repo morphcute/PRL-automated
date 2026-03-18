@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { SyncJob, SyncRun } from "@prisma/client";
 import { signOut } from "next-auth/react";
 import Modal from "./Modal";
@@ -11,10 +11,22 @@ type JobWithRuns = SyncJob & {
   runs: SyncRun[];
 };
 
+type ProgressData = {
+  status: string;
+  progress: number;
+  progressMessage: string | null;
+};
+
 export default function Dashboard() {
   const [jobs, setJobs] = useState<JobWithRuns[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
+  // Live progress map: jobId → { status, progress, progressMessage }
+  const [runProgress, setRunProgress] = useState<Map<string, ProgressData>>(new Map());
+
+  // Store poller intervals per job so we can cancel them
+  const pollersRef = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+
   // Pagination & Search
   const [currentPage, setCurrentPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState("");
@@ -26,6 +38,9 @@ export default function Dashboard() {
   const [selectedJob, setSelectedJob] = useState<JobWithRuns | null>(null);
 
   const getDisplayStatus = (job: JobWithRuns): SyncRun["status"] | undefined => {
+    // Use live polled status first if available
+    const live = runProgress.get(job.id);
+    if (live) return live.status as SyncRun["status"];
     const latestStatus = job.runs?.[0]?.status;
     if (latestStatus === "running") return "running";
     if (!job.lastRunAt) return undefined;
@@ -62,35 +77,95 @@ export default function Dashboard() {
     }
   }, []);
 
+  // Start a 1.5s realtime poller for a specific job
+  const startProgressPoller = useCallback((jobId: string) => {
+    // Don't start a duplicate poller
+    if (pollersRef.current.has(jobId)) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/progress`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data: ProgressData = await res.json();
+
+        setRunProgress(prev => {
+          const next = new Map(prev);
+          next.set(jobId, data);
+          return next;
+        });
+
+        // Job finished — stop the poller and do a full refresh to update status badge
+        if (data.status !== "running") {
+          clearInterval(pollersRef.current.get(jobId));
+          pollersRef.current.delete(jobId);
+          // Keep progress visible briefly, then clear it
+          setTimeout(() => {
+            setRunProgress(prev => {
+              const next = new Map(prev);
+              next.delete(jobId);
+              return next;
+            });
+          }, 2000);
+          fetchJobs();
+        }
+      } catch {
+        // Silently ignore network errors during polling
+      }
+    }, 1500);
+
+    pollersRef.current.set(jobId, interval);
+  }, [fetchJobs]);
+
+  // Stop poller for a specific job  
+  const stopProgressPoller = useCallback((jobId: string) => {
+    const interval = pollersRef.current.get(jobId);
+    if (interval) {
+      clearInterval(interval);
+      pollersRef.current.delete(jobId);
+    }
+  }, []);
+
   useEffect(() => {
     fetchJobs();
   }, [fetchJobs]);
 
-  // Smart polling: 5s when jobs are running, 30s when idle
-  // The external cron handles job scheduling — dashboard only needs to refresh status.
+  // When jobs update, start pollers for any running jobs
+  useEffect(() => {
+    jobs.forEach(job => {
+      const isRunning = job.runs?.[0]?.status === "running";
+      if (isRunning) {
+        startProgressPoller(job.id);
+      }
+    });
+  }, [jobs, startProgressPoller]);
+
+  // Slow background poll for non-running state (job list refresh every 30s)
   useEffect(() => {
     const hasRunningJobs = jobs.some(j => j.runs?.[0]?.status === "running");
-    const pollInterval = hasRunningJobs ? 5000 : 30000;
-
-    const pollJobs = () => {
-      if (document.visibilityState === "visible") {
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible" && !hasRunningJobs) {
         fetchJobs();
       }
-    };
+    }, 30000);
 
-    const refreshInterval = setInterval(pollJobs, pollInterval);
-
-    // Refresh once when tab becomes visible again
     const handleVisibility = () => {
       if (document.visibilityState === "visible") fetchJobs();
     };
     document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
-      clearInterval(refreshInterval);
+      clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [fetchJobs, jobs]);
+
+  // Cleanup all pollers on unmount
+  useEffect(() => {
+    return () => {
+      pollersRef.current.forEach(interval => clearInterval(interval));
+      pollersRef.current.clear();
+    };
+  }, []);
 
   const handleRunClick = (job: JobWithRuns) => {
     setSelectedJob(job);
@@ -105,7 +180,7 @@ export default function Dashboard() {
   const confirmRunJob = async () => {
     if (!selectedJob) return;
     setRunModalOpen(false);
-    
+
     try {
       const res = await fetch(`/api/jobs/${selectedJob.id}/run`, { method: "POST" });
       if (!res.ok) {
@@ -113,6 +188,18 @@ export default function Dashboard() {
         throw new Error(errorData.error || "Failed to run job");
       }
       toast(`Sync job "${selectedJob.name}" started successfully.`, "success");
+
+      // Immediately seed the live progress state so UI shows "running" instantly
+      setRunProgress(prev => {
+        const next = new Map(prev);
+        next.set(selectedJob.id, { status: "running", progress: 0, progressMessage: "Starting..." });
+        return next;
+      });
+
+      // Start the realtime poller immediately
+      startProgressPoller(selectedJob.id);
+
+      // Refresh job list to reflect status badge change
       fetchJobs();
     } catch (error: any) {
       toast(error.message || "Error triggering job", "error");
@@ -126,6 +213,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`/api/jobs/${selectedJob.id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete job");
+      stopProgressPoller(selectedJob.id);
       setJobs(jobs.filter((j) => j.id !== selectedJob.id));
       toast(`Job "${selectedJob.name}" deleted.`, "info");
     } catch (error) {
@@ -140,13 +228,13 @@ export default function Dashboard() {
   const successRate = jobs.length > 0 ? Math.round((successfulJobs / jobs.length) * 100) : 0;
 
   // Filter & Pagination
-  const filteredJobs = jobs.filter(job => 
-    job.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+  const filteredJobs = jobs.filter(job =>
+    job.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     job.type.toLowerCase().includes(searchQuery.toLowerCase())
   );
   const totalPages = Math.ceil(filteredJobs.length / ITEMS_PER_PAGE);
   const paginatedJobs = filteredJobs.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE, 
+    (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
 
@@ -183,6 +271,14 @@ export default function Dashboard() {
     }
   };
 
+  // Helper: get progress bar data preferring live polled data
+  const getProgressData = (job: JobWithRuns) => {
+    const live = runProgress.get(job.id);
+    if (live) return { progress: live.progress, progressMessage: live.progressMessage };
+    const run = job.runs?.[0];
+    return { progress: run?.progress ?? 0, progressMessage: run?.progressMessage ?? null };
+  };
+
   if (loading) return (
     <div className="flex flex-col justify-center items-center min-h-[60vh] gap-4">
       <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -198,13 +294,13 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold tracking-tight text-white">PRL Automated</h1>
           <p className="text-white/40 mt-1 text-sm">Manage and monitor your sync operations.</p>
         </div>
-        
+
         <div className="flex gap-3 items-center">
           <Link href="/jobs/new" className="btn-primary">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
             Create Job
           </Link>
-          <button 
+          <button
             onClick={() => signOut({ callbackUrl: "/" })}
             className="btn-ghost"
           >
@@ -247,7 +343,7 @@ export default function Dashboard() {
           <div className="text-white/30 text-xs font-medium uppercase tracking-wider mb-3">Success Rate</div>
           <div className="text-4xl font-bold text-white mb-2">{successRate}%</div>
           <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-            <div 
+            <div
               className="h-full bg-gradient-to-r from-emerald-500 to-green-400 rounded-full transition-all duration-1000"
               style={{ width: `${successRate}%` }}
             />
@@ -260,15 +356,22 @@ export default function Dashboard() {
         <div className="p-6 border-b border-white/[0.06] flex flex-col sm:flex-row justify-between items-center gap-4">
           <div>
             <h2 className="text-lg font-semibold text-white">Active Jobs</h2>
-            <div className="text-xs text-white/30 mt-0.5">
-              Auto-refreshing{jobs.some(j => j.runs?.[0]?.status === "running") ? " every 5s" : " every 15s"}
+            <div className="text-xs text-white/30 mt-0.5 flex items-center gap-1.5">
+              {runningJobs > 0 ? (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  Live updates every 1.5s
+                </>
+              ) : (
+                "Auto-refreshing every 30s"
+              )}
             </div>
           </div>
-          
+
           <div className="relative w-full sm:w-72">
-            <input 
-              type="text" 
-              placeholder="Search jobs..." 
+            <input
+              type="text"
+              placeholder="Search jobs..."
               value={searchQuery}
               onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
               className="input-field !pl-10"
@@ -276,7 +379,7 @@ export default function Dashboard() {
             <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
           </div>
         </div>
-        
+
         {/* Mobile View: Cards */}
         <div className="block sm:hidden p-4 space-y-3">
           {jobs.length === 0 ? (
@@ -291,6 +394,7 @@ export default function Dashboard() {
             paginatedJobs.map((job) => {
               const displayStatus = getDisplayStatus(job);
               const isRunning = displayStatus === "running";
+              const { progress, progressMessage } = getProgressData(job);
 
               return (
               <div key={job.id} className="glass-card rounded-xl p-4 space-y-4">
@@ -335,11 +439,11 @@ export default function Dashboard() {
                 {isRunning && (
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-xs">
-                      <span className="text-blue-400">{job.runs[0].progressMessage || "Processing..."}</span>
-                      <span className="text-white font-mono text-[10px]">{job.runs[0].progress || 0}%</span>
+                      <span className="text-blue-400">{progressMessage || "Processing..."}</span>
+                      <span className="text-white font-mono text-[10px]">{progress}%</span>
                     </div>
                     <div className="h-1.5 bg-white/[0.06] rounded-full overflow-hidden">
-                      <div className="h-full bg-blue-500 transition-all duration-500 rounded-full" style={{ width: `${job.runs[0].progress || 0}%` }} />
+                      <div className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all duration-300 rounded-full" style={{ width: `${progress}%` }} />
                     </div>
                   </div>
                 )}
@@ -378,6 +482,7 @@ export default function Dashboard() {
                 paginatedJobs.map((job) => {
                   const displayStatus = getDisplayStatus(job);
                   const isRunning = displayStatus === "running";
+                  const { progress, progressMessage } = getProgressData(job);
 
                   return (
                   <tr key={job.id} className="table-row-hover group border-b border-white/[0.04] last:border-0">
@@ -414,11 +519,16 @@ export default function Dashboard() {
                       {isRunning ? (
                         <div className="w-full">
                           <div className="flex justify-between text-[10px] mb-1.5">
-                            <span className="text-blue-400">{job.runs[0].progressMessage || "Processing..."}</span>
-                            <span className="text-white/80 font-mono">{job.runs[0].progress || 0}%</span>
+                            <span className="text-blue-400 truncate max-w-[140px]" title={progressMessage || "Processing..."}>
+                              {progressMessage || "Processing..."}
+                            </span>
+                            <span className="text-white/80 font-mono ml-2 shrink-0">{progress}%</span>
                           </div>
                           <div className="h-1.5 w-full bg-white/[0.06] rounded-full overflow-hidden">
-                            <div className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all duration-500 ease-out rounded-full" style={{ width: `${job.runs[0].progress || 0}%` }} />
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-600 to-blue-400 transition-all duration-300 ease-out rounded-full"
+                              style={{ width: `${progress}%` }}
+                            />
                           </div>
                         </div>
                       ) : (
@@ -464,8 +574,8 @@ export default function Dashboard() {
                   key={page}
                   onClick={() => setCurrentPage(page)}
                   className={`px-3 py-1.5 rounded-lg text-xs transition-colors ${
-                    currentPage === page 
-                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20' 
+                    currentPage === page
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/20'
                       : 'bg-white/[0.04] hover:bg-white/[0.08] text-white/60'
                   }`}
                 >
