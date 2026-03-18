@@ -148,54 +148,62 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     };
 
     // --- Special Handling for Verifier Mode ---
-    // If job.type === "verifier", we skip the standard team transformation
-    // and process the sheet exactly as requested: 
-    // Read C(IGN), D(Server), E(ID) -> Write Status to F
-    
+    // In verifier mode, we operate IN-PLACE on the TARGET spreadsheet.
+    // We read the target sheet, find the Server and UID columns, verify them,
+    // and write back the Status (and update IGN if found).
     if (job.type === "verifier") {
-       await updateProgress(10, "Starting Verifier Mode...");
+       await updateProgress(10, "Starting Verifier Mode (In-Place Update)...");
        
-       // In verifier mode, we assume the user provided a spreadsheet with data already populated.
-       // The requirement is to read specific columns and update the status column IN PLACE.
-       // However, this function is designed to READ from Source and WRITE to Target.
-       // To adapt this without breaking the "Source -> Target" model:
-       // 1. We will read the source sheet (C, D, E).
-       // 2. We will verify the IDs.
-       // 3. We will write the result (IGN + Status) back to the TARGET sheet in a similar format.
+       if (!job.targetSpreadsheetId) throw new Error("Target Spreadsheet ID required for Verifier");
+       const targetId = job.targetSpreadsheetId;
+       const TAB_NAME = job.sheetName || "Pre Registered List";
        
-       // BUT, the user prompt implies updating the sheet in place ("checking this columns and adding the result... in Column F").
-       // Since this is a "Sync" job that defines a Source and Target, let's stick to the pattern:
-       // Read Source -> Verify -> Write to Target (copying the structure).
+       // 1. Read the TARGET sheet
+       const targetData = await sheets.spreadsheets.values.get({
+          spreadsheetId: targetId,
+          range: `'${TAB_NAME}'!A:Z`,
+       });
        
-       // Source Columns based on user description:
-       // Col A (Index 0) = No.
-       // Col B (Index 1) = Players Name
-       // Col C (Index 2) = IGN
-       // Col D (Index 3) = Server
-       // Col E (Index 4) = User ID
+       const targetRows = targetData.data.values || [];
+       if (targetRows.length < 2) {
+          throw new Error("Target sheet is empty or has no data rows. Must run Standard Sync first.");
+       }
        
-       const verifierRows: any[][] = [["No.", "Players Name", "Players IGN", "# Server", "# UID", "Status"]];
+       const headerRow = targetRows[0];
+       const cleanHeader = (h: any) => String(h || "").replace(/\s+/g, "").toLowerCase();
        
-       // Batch Verification Logic for Verifier Mode
-       const verifierQueue: { no: string, name: string, ign: string, server: string, uid: string, rowIndex: number }[] = [];
+       // Find column indices
+       let serverIdx = headerRow.findIndex(h => cleanHeader(h).includes("server"));
+       let uidIdx = headerRow.findIndex(h => cleanHeader(h).includes("uid") || cleanHeader(h) === "id");
+       let ignIdx = headerRow.findIndex(h => cleanHeader(h).includes("ign"));
+       let statusIdx = headerRow.findIndex(h => cleanHeader(h).includes("status"));
        
-       for (let r = 0; r < sourceRows.length; r++) {
-          const row = sourceRows[r];
-          // Ensure we don't access out of bounds
-          const no = cleanValue(row[0]);     // Col A
-          const name = cleanValue(row[1]);   // Col B
-          const ign = cleanValue(row[2]);    // Col C
-          const server = cleanValue(row[3]); // Col D
-          const uid = cleanValue(row[4]);    // Col E
+       // Fallbacks if headers are exactly as standard
+       if (serverIdx === -1) serverIdx = 3;
+       if (uidIdx === -1) uidIdx = 4;
+       
+       // If no status column exists, append it to the end
+       if (statusIdx === -1) {
+          statusIdx = headerRow.length;
+          // Ensure Header has Status
+          await sheets.spreadsheets.values.update({
+             spreadsheetId: targetId,
+             range: `'${TAB_NAME}'!${String.fromCharCode(65 + statusIdx)}1`,
+             valueInputOption: "USER_ENTERED",
+             requestBody: { values: [["Status"]] }
+          });
+       }
+       
+       const verifierQueue: { uid: string, server: string, rowIndex: number, ign: string }[] = [];
+       
+       for (let r = 1; r < targetRows.length; r++) {
+          const row = targetRows[r];
+          const server = cleanValue(row[serverIdx]);
+          const uid = cleanValue(row[uidIdx]);
+          const ign = ignIdx !== -1 ? cleanValue(row[ignIdx]) : "";
           
           if (uid && server) {
-             verifierQueue.push({ no, name, ign, server, uid, rowIndex: r });
-          } else if (ign || server || uid || name || no) {
-             // Keep incomplete rows to maintain structure if they have *some* data
-             verifierQueue.push({ no, name, ign, server, uid, rowIndex: r });
-          } else {
-             // Keep empty rows to maintain structure
-             verifierQueue.push({ no: "", name: "", ign: "", server: "", uid: "", rowIndex: r });
+             verifierQueue.push({ uid, server, rowIndex: r, ign });
           }
        }
        
@@ -203,32 +211,43 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
        let completedCount = 0;
        const BATCH_SIZE = 10;
        
-       // Process queue
+       const updateData: { range: string; values: string[][] }[] = [];
+       
        for (let i = 0; i < verifierQueue.length; i += BATCH_SIZE) {
           const batch = verifierQueue.slice(i, i + BATCH_SIZE);
           
           await Promise.all(batch.map(async (item) => {
-             let status = "";
-             let finalIgn = item.ign;
+             let status = "Error";
+             let currentIgn = item.ign;
              
-             if (item.uid && item.server) {
-                try {
-                   const result = await verifyMlbbId(item.uid, item.server);
-                   if (result.success && result.ign) {
-                      finalIgn = result.ign;
-                      status = "Verified";
-                   } else {
-                      status = "Not Found";
-                   }
-                } catch (e) {
-                   console.error(`Verifier error for ${item.uid}`, e);
-                   // Don't fail the whole job, just mark this row
-                   status = "Error"; 
+             try {
+                const result = await verifyMlbbId(item.uid, item.server);
+                if (result.success && result.ign) {
+                   status = "Verified";
+                   currentIgn = result.ign;
+                } else {
+                   status = "Not Found";
                 }
+             } catch (e) {
+                console.error(`Verifier error for ${item.uid}`, e);
              }
              
-             // Store result in the row: A, B, C, D, E, F
-             verifierRows.push([item.no, item.name, finalIgn, item.server, item.uid, status]);
+             // Prepare Status update
+             const rowNum = item.rowIndex + 1; // 1-based index in sheets
+             const statusColLetter = String.fromCharCode(65 + statusIdx);
+             updateData.push({
+                range: `'${TAB_NAME}'!${statusColLetter}${rowNum}`,
+                values: [[status]]
+             });
+             
+             // Prepare IGN update if we verified it and it changed
+             if (status === "Verified" && ignIdx !== -1 && currentIgn !== item.ign) {
+                const ignColLetter = String.fromCharCode(65 + ignIdx);
+                updateData.push({
+                   range: `'${TAB_NAME}'!${ignColLetter}${rowNum}`,
+                   values: [[currentIgn]]
+                });
+             }
           }));
           
           completedCount += batch.length;
@@ -236,224 +255,71 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
           await updateProgress(progress, `Verifying IDs: ${completedCount}/${totalToVerify}`);
        }
        
-       // Write to Target
-       await updateProgress(95, "Writing results...");
+       // Write all updates in one batch
+       await updateProgress(95, "Updating spreadsheet...");
        
-       // Reuse the existing sheet writing logic, but with our new `verifierRows`
-       // We need to bypass the standard loop below.
-       
-       // ... existing sheet creation/clearing logic ...
-        const targetId = job.targetSpreadsheetId;
-        const TAB_NAME = job.sheetName || "Pre Registered List";
-        let targetSheetId: number | null = null;
-        let reusedExistingTab = false;
-        let existingTabHasTemplate = false;
-
-       const targetSpreadsheet = await sheets.spreadsheets.get({ spreadsheetId: targetId });
-       let targetSheet = targetSpreadsheet.data.sheets?.find(s => s.properties?.title === TAB_NAME);
-       
-       // If TAB_NAME does not exist yet, renaming Sheet1 is treated as creating a new layout tab.
-       if (!targetSheet) {
-          const sheet1 = targetSpreadsheet.data.sheets?.find(s => s.properties?.title === "Sheet1");
-          if (sheet1) {
-             await sheets.spreadsheets.batchUpdate({
-                spreadsheetId: targetId,
-                requestBody: {
-                   requests: [{
-                      updateSheetProperties: {
-                         properties: { sheetId: sheet1.properties?.sheetId, title: TAB_NAME },
-                         fields: "title"
-                      }
-                   }]
-                }
-              });
-              targetSheetId = sheet1.properties?.sheetId || 0;
-              reusedExistingTab = false;
-          }
-       } else {
-          targetSheetId = targetSheet.properties?.sheetId || 0;
-          reusedExistingTab = true;
-          existingTabHasTemplate = await hasExpectedTemplateHeader(targetId, TAB_NAME, true);
-       }
-       
-       if (targetSheetId === null && !targetSheet) {
-          const createResp = await sheets.spreadsheets.batchUpdate({
+       if (updateData.length > 0) {
+          await sheets.spreadsheets.values.batchUpdate({
              spreadsheetId: targetId,
-             requestBody: { requests: [{ addSheet: { properties: { title: TAB_NAME } } }] }
+             requestBody: {
+                valueInputOption: "USER_ENTERED",
+                data: updateData
+             }
           });
-          targetSheetId = createResp.data.replies?.[0].addSheet?.properties?.sheetId || 0;
        }
        
-       const preserveExistingLayout = reusedExistingTab && existingTabHasTemplate;
-
-       // Write Verifier Data
-       if (targetSheetId !== null) {
-          const valuesToWrite = preserveExistingLayout
-             ? verifierRows.slice(1).map((row) => row.slice(1))
-             : verifierRows;
-          const writeStartColumn = preserveExistingLayout ? "B" : "A";
-          const writeStartRow = preserveExistingLayout ? 2 : 1;
-          const writeRange = `'${TAB_NAME}'!${writeStartColumn}${writeStartRow}:F`;
-
-          // Keep manual template content intact for reused tabs.
-          if (!preserveExistingLayout) {
-             await sheets.spreadsheets.values.clear({ spreadsheetId: targetId, range: `'${TAB_NAME}'!A:F` });
-          }
-          if (valuesToWrite.length > 0) {
-             await sheets.spreadsheets.values.update({
-                spreadsheetId: targetId,
-                range: writeRange,
-                valueInputOption: "USER_ENTERED",
-                requestBody: { values: valuesToWrite },
-             });
-          }
+       // Re-apply conditional formatting for Status column (soft mint, rose, amber)
+       try {
+          // get sheetId for formatting
+          const sheetData = await sheets.spreadsheets.get({ spreadsheetId: targetId });
+          const sheet = sheetData.data.sheets?.find(s => s.properties?.title === TAB_NAME);
+          const targetSheetIdNum = sheet?.properties?.sheetId;
           
-           // Apply Formatting for Verifier
-           if (!preserveExistingLayout) {
-              const colCount = 6;
-              const requests: any[] = [];
-
-              // Freeze header row
-              requests.push({
-                 updateSheetProperties: {
-                    properties: { sheetId: targetSheetId, gridProperties: { frozenRowCount: 1 } },
-                    fields: "gridProperties.frozenRowCount"
-                 }
-              });
-
-              // Header — deep navy with white text
-              requests.push({
-                 repeatCell: {
-                    range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: colCount },
-                    cell: { userEnteredFormat: {
-                       backgroundColor: { red: 0.11, green: 0.13, blue: 0.22 },
-                       textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 }, bold: true, fontSize: 10 },
-                       horizontalAlignment: "CENTER",
-                       verticalAlignment: "MIDDLE"
-                    }},
-                    fields: "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment)"
-                 }
-              });
-
-              // Data cells — soft borders, alignment, wrap
-              requests.push({
-                 repeatCell: {
-                    range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: verifierRows.length, startColumnIndex: 0, endColumnIndex: colCount },
-                    cell: { userEnteredFormat: {
-                       borders: {
-                          top: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
-                          bottom: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
-                          left: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } },
-                          right: { style: "SOLID", color: { red: 0.85, green: 0.85, blue: 0.85 } }
-                       },
-                       horizontalAlignment: "CENTER",
-                       verticalAlignment: "MIDDLE",
-                       wrapStrategy: "WRAP",
-                       textFormat: { fontSize: 10 }
-                    }},
-                    fields: "userEnteredFormat(borders,horizontalAlignment,verticalAlignment,wrapStrategy,textFormat.fontSize)"
-                 }
-              });
-
-              // Alternating row colors — subtle gray stripe
-              for (let r = 1; r < verifierRows.length; r++) {
-                 if (r % 2 === 0) {
-                    requests.push({
-                       repeatCell: {
-                          range: { sheetId: targetSheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: 0, endColumnIndex: colCount },
-                          cell: { userEnteredFormat: { backgroundColor: { red: 0.96, green: 0.96, blue: 0.97 } } },
-                          fields: "userEnteredFormat.backgroundColor"
-                       }
-                    });
-                 }
-              }
-
-              // Conditional Formatting — soft mint green for Verified
-              requests.push({
-                 addConditionalFormatRule: {
-                    rule: {
-                       ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
-                       booleanRule: {
-                          condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] },
-                          format: { backgroundColor: { red: 0.85, green: 0.95, blue: 0.87 }, textFormat: { foregroundColor: { red: 0.1, green: 0.45, blue: 0.2 }, bold: true } }
-                       }
-                    }, index: 0
-                 }
-              });
-
-              // Conditional Formatting — soft rose for Not Found
-              requests.push({
-                 addConditionalFormatRule: {
-                    rule: {
-                       ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
-                       booleanRule: {
-                          condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] },
-                          format: { backgroundColor: { red: 0.98, green: 0.86, blue: 0.86 }, textFormat: { foregroundColor: { red: 0.7, green: 0.15, blue: 0.15 }, bold: true } }
-                       }
-                    }, index: 1
-                 }
-              });
-
-              // Conditional Formatting — soft amber for Error
-              requests.push({
-                 addConditionalFormatRule: {
-                    rule: {
-                       ranges: [{ sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 5, endColumnIndex: 6 }],
-                       booleanRule: {
-                          condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Error" }] },
-                          format: { backgroundColor: { red: 1, green: 0.95, blue: 0.8 }, textFormat: { foregroundColor: { red: 0.6, green: 0.4, blue: 0 }, bold: true } }
-                       }
-                    }, index: 2
-                 }
-              });
-
-              // Thick header bottom border
-              requests.push({
-                 updateBorders: {
-                    range: { sheetId: targetSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: colCount },
-                    bottom: { style: "SOLID_MEDIUM", color: { red: 0.11, green: 0.13, blue: 0.22 } }
-                 }
-              });
-
-              // Auto-resize columns to fit content
-              requests.push({
-                 autoResizeDimensions: {
-                    dimensions: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 0, endIndex: colCount }
-                 }
-              });
-
-              // Set minimum widths
-              requests.push({
-                 updateDimensionProperties: {
-                    range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 0, endIndex: 1 },
-                    properties: { pixelSize: 50 },
-                    fields: "pixelSize"
-                 }
-              });
-              requests.push({
-                 updateDimensionProperties: {
-                    range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 3 },
-                    properties: { pixelSize: 200 },
-                    fields: "pixelSize"
-                 }
-              });
-              requests.push({
-                 updateDimensionProperties: {
-                    range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 5, endIndex: 6 },
-                    properties: { pixelSize: 110 },
-                    fields: "pixelSize"
-                 }
-              });
-              
-              try {
-                await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
-              } catch (formatError) {
-                console.error("Non-fatal verifier formatting error:", formatError);
-              }
-           }
-        }
+          if (targetSheetIdNum !== undefined) {
+             const requests = [];
+             
+             // clear existing conditional formatting on the status column to avoid duplicates
+             requests.push({
+                clearBasicFilter: { sheetId: targetSheetIdNum } // safe cleanup
+             });
+             
+             // 1. Soft mint green for Verified
+             requests.push({
+                addConditionalFormatRule: {
+                   rule: {
+                      ranges: [{ sheetId: targetSheetIdNum, startRowIndex: 1, startColumnIndex: statusIdx, endColumnIndex: statusIdx + 1 }],
+                      booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Verified" }] }, format: { backgroundColor: { red: 0.85, green: 0.95, blue: 0.87 }, textFormat: { foregroundColor: { red: 0.1, green: 0.45, blue: 0.2 }, bold: true } } }
+                   }, index: 0
+                }
+             });
+             
+             // 2. Soft rose for Not Found
+             requests.push({
+                addConditionalFormatRule: {
+                   rule: {
+                      ranges: [{ sheetId: targetSheetIdNum, startRowIndex: 1, startColumnIndex: statusIdx, endColumnIndex: statusIdx + 1 }],
+                      booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Not Found" }] }, format: { backgroundColor: { red: 0.98, green: 0.86, blue: 0.86 }, textFormat: { foregroundColor: { red: 0.7, green: 0.15, blue: 0.15 }, bold: true } } }
+                   }, index: 1
+                }
+             });
+             
+             // 3. Soft amber for Error
+             requests.push({
+                addConditionalFormatRule: {
+                   rule: {
+                      ranges: [{ sheetId: targetSheetIdNum, startRowIndex: 1, startColumnIndex: statusIdx, endColumnIndex: statusIdx + 1 }],
+                      booleanRule: { condition: { type: "TEXT_EQ", values: [{ userEnteredValue: "Error" }] }, format: { backgroundColor: { red: 1, green: 0.95, blue: 0.8 }, textFormat: { foregroundColor: { red: 0.6, green: 0.4, blue: 0 }, bold: true } } }
+                   }, index: 2
+                }
+             });
+             
+             await sheets.spreadsheets.batchUpdate({ spreadsheetId: targetId, requestBody: { requests } });
+          }
+       } catch (formatError) {
+          console.error("Non-fatal verification formatting error:", formatError);
+       }
        
-       return { rowsWritten: verifierRows.length, success: true };
+       return { rowsWritten: updateData.length, success: true };
     }
     // --- End Verifier Mode Handling ---
 
