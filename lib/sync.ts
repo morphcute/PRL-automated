@@ -201,7 +201,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
        
        const totalToVerify = verifierQueue.length;
        let completedCount = 0;
-       const BATCH_SIZE = 10;
+       const BATCH_SIZE = 5;
        
        // Process queue
        for (let i = 0; i < verifierQueue.length; i += BATCH_SIZE) {
@@ -217,8 +217,10 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
                    if (result.success && result.ign) {
                       finalIgn = result.ign;
                       status = "Verified";
-                   } else {
+                   } else if (result.error === "Player not found") {
                       status = "Not Found";
+                   } else {
+                      status = "Error (Rate Limited)";
                    }
                 } catch (e) {
                    console.error(`Verifier error for ${item.uid}`, e);
@@ -234,6 +236,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
           completedCount += batch.length;
           const progress = 10 + Math.floor((completedCount / totalToVerify) * 80);
           await updateProgress(progress, `Verifying IDs: ${completedCount}/${totalToVerify}`);
+          await new Promise(r => setTimeout(r, 600)); // Rate limit prevention
        }
        
        // Write to Target
@@ -430,6 +433,15 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
                     fields: "pixelSize"
                  }
               });
+
+              // Format Column A as Plain Text to prevent Google Sheets from interpreting '1' as a Date
+              requests.push({
+                  repeatCell: {
+                      range: { sheetId: targetSheetId, startRowIndex: 1, endRowIndex: verifierRows.length, startColumnIndex: 0, endColumnIndex: 1 },
+                      cell: { userEnteredFormat: { numberFormat: { type: "TEXT" } } },
+                      fields: "userEnteredFormat.numberFormat"
+                  }
+              });
               requests.push({
                  updateDimensionProperties: {
                     range: { sheetId: targetSheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 3 },
@@ -509,7 +521,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     }
 
     // Process Verification Queue in Batches (Parallel)
-    const BATCH_SIZE = 10; // 10 requests at a time
+    const BATCH_SIZE = 5; // Reduced to prevent Moogold rate limit
     const verificationResults = new Map<string, { ign?: string, status: string }>();
     
     if (verificationQueue.length > 0) {
@@ -526,8 +538,10 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
                 const result = await verifyMlbbId(item.uVal, item.sVal);
                 if (result.success && result.ign) {
                    verificationResults.set(key, { ign: result.ign, status: "Verified" });
-                } else {
+                } else if (result.error === "Player not found") {
                    verificationResults.set(key, { status: "Not Found" });
+                } else {
+                   verificationResults.set(key, { status: "Error (Rate Limited)" });
                 }
              } catch (e) {
                 console.error(`Verification error for ${item.uVal}`, e);
@@ -539,6 +553,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
           // Update progress based on verification (first 50% of progress bar)
           const progress = Math.floor((completedCount / totalToVerify) * 50);
           await updateProgress(progress, `Verifying IDs: ${completedCount}/${totalToVerify}`);
+          await new Promise(r => setTimeout(r, 600)); // Rate limit prevention
        }
     } else {
        await updateProgress(50, "No IDs to verify, proceeding..."); // Jump to 50% if no verification needed
@@ -864,6 +879,15 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
                 }
              });
         }
+
+        // Format Column A as Plain Text to prevent Google Sheets from interpreting '1' as a Date
+        requests.push({
+            repeatCell: {
+                range: { sheetId: targetSheetId, startRowIndex: 1, endRowIndex: rows.length, startColumnIndex: 0, endColumnIndex: 1 },
+                cell: { userEnteredFormat: { numberFormat: { type: "TEXT" } } },
+                fields: "userEnteredFormat.numberFormat"
+            }
+        });
 
         // 4. Merge "No." Columns + team separators
         for (const range of mergeRanges) {

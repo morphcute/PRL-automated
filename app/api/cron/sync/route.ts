@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { runDueJobs } from "@/lib/scheduler";
 import { prisma } from "@/lib/prisma";
 
+export const maxDuration = 300;
+
 export async function GET(req: NextRequest) {
   return POST(req);
 }
