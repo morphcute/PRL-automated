@@ -179,31 +179,43 @@ export default function Dashboard() {
 
   const confirmRunJob = async () => {
     if (!selectedJob) return;
+    const jobId = selectedJob.id;
+    const jobName = selectedJob.name;
     setRunModalOpen(false);
 
+    // Immediately seed the live progress state so UI shows "running" instantly
+    setRunProgress(prev => {
+      const next = new Map(prev);
+      next.set(jobId, { status: "running", progress: 0, progressMessage: "Starting..." });
+      return next;
+    });
+
+    // Start the realtime poller immediately. 
+    // It will fetch /progress and update the UI every 1.5s
+    startProgressPoller(jobId);
+
+    // Refresh job list to reflect status badge change
+    // Using a short delay to ensure the database record is created first
+    setTimeout(() => {
+      fetchJobs();
+    }, 1000);
+
     try {
-      const res = await fetch(`/api/jobs/${selectedJob.id}/run`, { method: "POST" });
+      // This fetch will take a while since the backend waits for the job to finish
+      const res = await fetch(`/api/jobs/${jobId}/run`, { method: "POST" });
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || "Failed to run job");
       }
-      toast(`Sync job "${selectedJob.name}" started successfully.`, "success");
-
-      // Immediately seed the live progress state so UI shows "running" instantly
-      setRunProgress(prev => {
-        const next = new Map(prev);
-        next.set(selectedJob.id, { status: "running", progress: 0, progressMessage: "Starting..." });
-        return next;
-      });
-
-      // Start the realtime poller immediately
-      startProgressPoller(selectedJob.id);
-
-      // Refresh job list to reflect status badge change
-      fetchJobs();
+      toast(`Sync job "${jobName}" completed.`, "success");
+      
     } catch (error: any) {
       toast(error.message || "Error triggering job", "error");
+      stopProgressPoller(jobId);
     }
+    
+    // Final UI refresh just in case
+    fetchJobs();
   };
 
   const confirmDeleteJob = async () => {
