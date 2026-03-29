@@ -38,6 +38,25 @@ export default function NewJobPage() {
 
   return (
     <div className="w-full">
+      <div className="mb-8 bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-sm">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-8 h-8 rounded-full bg-yellow-500/20 flex items-center justify-center border border-yellow-500/30">
+            <span className="text-yellow-400 font-bold text-sm">i</span>
+          </div>
+          <h2 className="text-xl font-bold text-white tracking-wide">Instructions</h2>
+        </div>
+        <ul className="space-y-3 text-white/70">
+          <li className="flex items-start gap-3">
+            <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 mt-2 shrink-0" />
+            <p><strong className="text-white font-semibold flex-shrink-0">Source Spreadsheet URL:</strong> The URL of the Tournament Response Sheet.</p>
+          </li>
+          <li className="flex items-start gap-3">
+            <div className="w-1.5 h-1.5 rounded-full bg-yellow-400 mt-2 shrink-0" />
+            <p><strong className="text-white font-semibold flex-shrink-0">Target Sheet Name:</strong> The PRL Sheet Name.</p>
+          </li>
+        </ul>
+      </div>
+
       <JobForm onSubmit={handleCreate} />
       
       <Modal
