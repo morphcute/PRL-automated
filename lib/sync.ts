@@ -287,7 +287,7 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
           targetSheetId = createResp.data.replies?.[0].addSheet?.properties?.sheetId || 0;
        }
        
-       const preserveExistingLayout = reusedExistingTab && existingTabHasTemplate;
+       const preserveExistingLayout = false; // Forced to false to always apply rich formatting
 
        // Write Verifier Data
        if (targetSheetId !== null) {
@@ -300,6 +300,16 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
 
           // Keep manual template content intact for reused tabs.
           if (!preserveExistingLayout) {
+             try {
+                await sheets.spreadsheets.batchUpdate({
+                   spreadsheetId: targetId,
+                   requestBody: {
+                      requests: [{ unmergeCells: { range: { sheetId: targetSheetId, startColumnIndex: 0, endColumnIndex: 6 } } }]
+                   }
+                });
+             } catch (e) {
+                console.error("Non-fatal unmerge error:", e);
+             }
              await sheets.spreadsheets.values.clear({ spreadsheetId: targetId, range: `'${TAB_NAME}'!A:F` });
           }
           if (valuesToWrite.length > 0) {
@@ -699,11 +709,21 @@ export async function syncPreRegisteredList(job: SyncJob, runId?: string) {
     }
 
     const outputEndColumn = job.validationEnabled ? "F" : "E";
-    const preserveExistingLayout = reusedExistingTab && existingTabHasTemplate;
+    const preserveExistingLayout = false; // Forced to false to always apply rich formatting
 
     if (targetSheetId !== null) {
       // Keep manual template content intact for reused tabs.
       if (!preserveExistingLayout) {
+        try {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId: targetId,
+            requestBody: {
+              requests: [{ unmergeCells: { range: { sheetId: targetSheetId, startColumnIndex: 0, endColumnIndex: 6 } } }]
+            }
+          });
+        } catch (e) {
+          console.error("Non-fatal unmerge error:", e);
+        }
         await sheets.spreadsheets.values.clear({
           spreadsheetId: targetId,
           range: `'${TAB_NAME}'!A:${outputEndColumn}`,
